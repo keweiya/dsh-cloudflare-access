@@ -27,14 +27,14 @@ Internet → Cloudflare Access → Cloudflare Proxy → Origin 允许名单 → 
 
 ## 图 2 远程 privileged 请求路径
 
-**结论：** Host/Origin 先于 JWT；JWT 有效也不得改写 Host。成功才转发 `apiProxy`。
+**结论：** Host/Origin 先于 JWT；JWT 有效也不得改写 Host。成功则交给原 `/api` handler。
 
 **交互图：** [privileged-request.html](./assets/archify/privileged-request.html)  
 **源：** [privileged-request.workflow.json](./assets/archify/privileged-request.workflow.json)
 
 ![远程 privileged 请求路径](./assets/archify/privileged-request.svg)
 
-Loopback 或 Host/Origin 失败交给 DSH 原 handler（不读 JWT）。privileged 且 JWT 有效：`bridge → apiProxy`。缺失或无效：401 / 403，不进入业务实现。
+Loopback 或 Host/Origin 失败交给 DSH 原 handler（不读 JWT）。privileged 且 JWT 有效：原 `/api` handler。缺失或无效：401 / 403，不进入业务实现。
 
 ---
 

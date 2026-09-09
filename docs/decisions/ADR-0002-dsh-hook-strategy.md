@@ -1,7 +1,9 @@
 # ADR-0002 DSH 0.1.0-rc.5 可逆 Hook 策略
 
 ## 状态
-accepted
+superseded by ADR-0005
+
+当前 live target 是 DSH `0.1.5-alpha.1`，见 `docs/decisions/ADR-0005-dsh-015-hook-strategy.md`。下文保留对 `0.1.0-rc.5` / `0.1.1-rc.2` 扩展点的记录。
 
 ## 背景
 规格要求不修改 DSH 本体，并在编码前确认扩展点。对 DeepSeek Harness `0.1.0-rc.5` 源码的调研结论：

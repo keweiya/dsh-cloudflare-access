@@ -4764,8 +4764,8 @@ rect.c-bg-rect { fill: var(--bg); }</style><rect width="100%" height="100%" clas
         <text data-detail="context" x="160" y="316" class="t-muted" font-size="9" text-anchor="middle">capability on</text>
         </g>
 
-        <g id="node-ui" data-node-id="ui" data-node-label="ui-settings" tabindex="0" role="button" aria-label="Focus ui-settings, settings.describe, Browser: no Cookie, no JWT verify" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="settings.describe" data-node-context="Browser: no Cookie, no JWT verify">
-          <title>ui-settings · settings.describe · Browser: no Cookie, no JWT verify</title>
+        <g id="node-ui" data-node-id="ui" data-node-label="ui-settings" tabindex="0" role="button" aria-label="Focus ui-settings, settings/describe, Browser: no Cookie, no JWT verify" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="settings/describe" data-node-context="Browser: no Cookie, no JWT verify">
+          <title>ui-settings · settings/describe · Browser: no Cookie, no JWT verify</title>
           <rect x="80" y="420" width="160" height="64" rx="6" class="c-mask"/>
           <rect x="80" y="420" width="160" height="64" rx="6" class="c-frontend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(86 426) scale(0.6875)">
@@ -4775,18 +4775,18 @@ rect.c-bg-rect { fill: var(--bg); }</style><rect width="100%" height="100%" clas
             <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill"/>
           </g>
           <text data-detail-anchor="" x="160" y="450" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">ui-settings</text>
-        <text data-detail="context" x="160" y="466" class="t-muted" font-size="9" text-anchor="middle">settings.describe</text>
+        <text data-detail="context" x="160" y="466" class="t-muted" font-size="9" text-anchor="middle">settings/describe</text>
         </g>
 
-        <g id="node-api" data-node-id="api" data-node-label="/api" tabindex="0" role="button" aria-label="Focus /api, settings.describe, Origin: sole authorizer" aria-pressed="false" data-node-kind="backend" data-node-sublabel="settings.describe" data-node-context="Origin: sole authorizer">
-          <title>/api · settings.describe · Origin: sole authorizer</title>
+        <g id="node-api" data-node-id="api" data-node-label="/api" tabindex="0" role="button" aria-label="Focus /api, settings/describe, Origin: sole authorizer" aria-pressed="false" data-node-kind="backend" data-node-sublabel="settings/describe" data-node-context="Origin: sole authorizer">
+          <title>/api · settings/describe · Origin: sole authorizer</title>
           <rect x="560" y="270" width="150" height="64" rx="6" class="c-mask"/>
           <rect x="560" y="270" width="150" height="64" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(566 276) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
           <text data-detail-anchor="" x="635" y="300" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">/api</text>
-        <text data-detail="context" x="635" y="316" class="t-muted" font-size="9" text-anchor="middle">settings.describe</text>
+        <text data-detail="context" x="635" y="316" class="t-muted" font-size="9" text-anchor="middle">settings/describe</text>
         </g>
 
         <g id="node-decide" data-node-id="decide" data-node-label="Server decision" tabindex="0" role="button" aria-label="Focus Server decision, JWT + Host/Origin, Origin: sole authorizer" aria-pressed="false" data-node-kind="security" data-node-sublabel="JWT + Host/Origin" data-node-context="Origin: sole authorizer">

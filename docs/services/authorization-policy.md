@@ -8,11 +8,11 @@ AuthorizationPolicy
 
 ## 职责
 - 根据 loopback、RPC 方法、ordinary 模式和 JWT 结果输出 `AuthDecision`。
-- 提供 privileged 方法集合（v0.1 配置面子 集）。
+- 提供 privileged 方法集合（配置面子 集）。
 
 ## 非职责
 - 执行 HTTP 响应写入。
-- 调用 DSH `apiProxy`。
+- 调用 DSH 原 `/api` handler。
 - 判断 Host/Origin（由 DSH 原函数或 compat 等价调用完成，policy 只消费其布尔结果）。
 
 ## 服务规则
@@ -31,7 +31,7 @@ RULE-SERVICE-POLICY-3: privileged 判定只使用 `docs/protocols.md` 的放行�
 {
   isLoopback: boolean
   hostOriginTrusted: boolean
-  method: string | undefined  // /api 之后的 RPC 名；upgrade 可用 events.mux / events.host
+  method: string | undefined  // /api 之后的 Remote 名；upgrade 为 remote.mux
   ordinary: 'off' | 'optional' | 'required'
   jwt: JwtVerification
 }
@@ -45,4 +45,4 @@ RULE-SERVICE-POLICY-3: privileged 判定只使用 `docs/protocols.md` 的放行�
 Policy 本身无 I/O。错误由 JwtVerifier 以 `jwt.reason` 传入。
 
 ## 示例
-远程 `settings.mutate` + missing JWT → `{ effect: 'deny', class: 'privileged', reason: 'missing_token' }`。
+远程 `settings/mutate` + missing JWT → `{ effect: 'deny', class: 'privileged', reason: 'missing_token' }`。

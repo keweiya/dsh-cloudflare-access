@@ -1,21 +1,26 @@
 import type { OrdinaryMode } from '../config.ts'
 import type { JwtFailureReason, JwtVerification } from './types.ts'
 
-/** Remote methods this plugin may authorize with a valid JWT. Native host methods stay DSH-pinned. */
+/**
+ * Remote methods this plugin may authorize with a valid JWT.
+ * Names match DSH 0.1.5-alpha.1 Typert Remote endpoints (`namespace/method`).
+ * Native directory-picker / host.openPath stay off this list.
+ */
 export const PRIVILEGED_METHODS = new Set<string>([
-  'settings.describe',
-  'settings.openDocument',
-  'settings.update',
-  'settings.replace',
-  'settings.mutate',
-  'credentials.describe',
-  'credentials.set',
-  'credentials.unset',
-  'agentPreset.read',
-  'agentPreset.copy',
-  'agentPreset.openDocument',
-  'agentPreset.remove',
-  'llm.discoverModels',
+  'settings/describe',
+  'settings/openSettingsDocument',
+  'settings/update',
+  'settings/replace',
+  'settings/mutate',
+  'settings/canOpenAgentPresetDirectory',
+  'settings/openAgentPresetDirectory',
+  'credentials/describe',
+  'credentials/set',
+  'credentials/unset',
+  'agentPresets/read',
+  'agentPresets/copy',
+  'agentPresets/deletePreset',
+  'llm/discoverModels',
 ])
 
 export type AuthClass = 'loopback' | 'privileged' | 'ordinary'

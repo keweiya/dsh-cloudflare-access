@@ -5,7 +5,7 @@ accepted
 
 ## 背景
 
-DeepSeek Harness（DSH）允许通过 `--trusted-host` 从远程域名访问普通 Web/API，但配置面与凭据面仍限制为 loopback。典型远程部署是：
+DeepSeek Harness（DSH）允许通过 `--trusted-host` 从远程域名访问 Web。配置面走 Typert Remote。Settings UI 把非 loopback 页当作 memory-only，因此远程页仍须由本插件开启 capability。典型远程部署是：
 
 ```text
 Browser → Cloudflare Access → Cloudflare Proxy → Origin Reverse Proxy → DeepSeek Harness
@@ -21,7 +21,7 @@ Cloudflare Access 已经完成身份认证，DSH 却无法识别该认证关系�
 - GOAL-3: 远程 Web Client 能够尝试使用 Settings / Credentials / Agent Preset / Model discovery，由 Server 做最终裁决。
 - GOAL-4: 普通 API 可按 `off | optional | required` 叠加 JWT 要求，默认不改变 DSH 原 trusted-host 行为。
 - GOAL-5: 以标准 DSH Profile Bundle + Client Plugin 安装，无需修改 DSH 本体或手工编辑 Profile patch。
-- GOAL-6: 插件卸载后 DSH 恢复官方远程 privileged 限制。
+- GOAL-6: 插件卸载后 JWT 包装可逆，DSH 恢复未安装本插件时的行为。
 
 ## 非目标
 - NON-GOAL-1: 提供账号、密码、MFA、登录页、Session 或用户数据库。
@@ -31,7 +31,7 @@ Cloudflare Access 已经完成身份认证，DSH 却无法识别该认证关系�
 - NON-GOAL-5: 远程开放 `host.pickDirectory` 或 `host.openPath`。
 - NON-GOAL-6: 实现 RBAC 或按 Cloudflare 用户/组做细粒度授权。
 - NON-GOAL-7: Fork DSH、patch 其 dist，或替换 Web 静态资源。
-- NON-GOAL-8: v0.1 接入 DSH 插件市场（仅预留兼容方向）。
+- NON-GOAL-8: 接入 DSH 插件市场（仅预留兼容方向）。
 
 ## 用户角色
 

@@ -10,10 +10,12 @@ export interface ServerPluginContext {
     webServer: {
         register(route: unknown): () => void;
         registerUpgrade(route: unknown): () => void;
+        registerFallback?(handler: unknown): () => void;
     };
     logger?: PluginLogger;
     effect(callback: () => (() => void) | Promise<void>, name?: string): void;
     get(name: string): unknown;
+    inject?(deps: readonly string[], callback: (fiber: unknown) => void): void;
 }
 export declare function apply(ctx: ServerPluginContext, config?: CordisConfig): void;
 //# sourceMappingURL=index.d.ts.map

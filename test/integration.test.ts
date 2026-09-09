@@ -10,6 +10,7 @@ import type { JwtVerification } from '../src/server/types.ts'
 interface FakeWebServer {
   register(route: WebRoute): () => void
   registerUpgrade(route: WebUpgradeRoute): () => void
+  registerFallback?(handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>): () => void
   routes: Map<string, WebRoute>
   upgrades: Map<string, WebUpgradeRoute>
 }
@@ -49,7 +50,6 @@ describe('server compat integration', () => {
       effect: collectEffects(disposers),
       get(name: string) {
         if (name === 'webRuntime') return { trustedHosts: ['dsh.example.com'] }
-        if (name === 'apiProxy') return { fetch: async () => new Response('ok') }
         return undefined
       },
     }
@@ -82,7 +82,7 @@ describe('server compat integration', () => {
     const http = httpStatusFor(decide({
       isLoopback: false,
       hostOriginTrusted: true,
-      method: 'settings.describe',
+      method: 'settings/describe',
       ordinary: 'off',
       jwt: { outcome: 'missing', reason: 'missing_token', audienceMatched: null },
     }))
@@ -129,21 +129,12 @@ describe('end-to-end privileged wrap', () => {
 
     const webServer = createFakeWebServer()
     const disposers: Array<() => void> = []
-    let proxied = 0
     applyServer({
       webServer,
       logger: { info() {}, warn() {} },
       effect: collectEffects(disposers),
       get(name: string) {
         if (name === 'webRuntime') return { trustedHosts: ['dsh.example.com'] }
-        if (name === 'apiProxy') {
-          return {
-            fetch: async () => {
-              proxied += 1
-              return new Response('proxied', { status: 200 })
-            },
-          }
-        }
         return undefined
       },
     }, {
@@ -156,8 +147,8 @@ describe('end-to-end privileged wrap', () => {
       path: '/api',
       handler: async (_req, res) => {
         innerCalls.push('inner')
-        res.writeHead(403)
-        res.end('forbidden')
+        res.writeHead(200)
+        res.end('inner')
       },
     })
 
@@ -173,15 +164,14 @@ describe('end-to-end privileged wrap', () => {
     if (route === undefined) throw new Error('route missing')
 
     const missing = await invoke(route.handler, {
-      url: '/api/settings.describe',
+      url: '/api/settings/describe',
       headers: { host: 'dsh.example.com', origin: 'https://dsh.example.com' },
     })
     expect(missing.status).toBe(401)
     expect(innerCalls).toEqual([])
-    expect(proxied).toBe(0)
 
     const allowed = await invoke(route.handler, {
-      url: '/api/settings.describe',
+      url: '/api/settings/describe',
       headers: {
         host: 'dsh.example.com',
         origin: 'https://dsh.example.com',
@@ -189,19 +179,20 @@ describe('end-to-end privileged wrap', () => {
       },
     })
     expect(allowed.status).toBe(200)
-    expect(allowed.body).toBe('proxied')
-    expect(proxied).toBe(1)
+    expect(allowed.body).toBe('inner')
+    expect(innerCalls).toEqual(['inner'])
 
     const badHost = await invoke(route.handler, {
-      url: '/api/settings.describe',
+      url: '/api/settings/describe',
       headers: {
         host: 'evil.example',
         origin: 'https://evil.example',
         'cf-access-jwt-assertion': token,
       },
     })
-    expect(badHost.status).toBe(403)
-    expect(innerCalls).toEqual(['inner'])
+    expect(badHost.status).toBe(200)
+    expect(badHost.body).toBe('inner')
+    expect(innerCalls).toEqual(['inner', 'inner'])
 
     for (const dispose of disposers) dispose()
     jwks.close()
@@ -251,7 +242,6 @@ describe('JWT verification is skipped when it cannot change the decision', () =>
       config: pluginConfig(input.ordinary),
       verifier: counted.verifier,
       getTrustedHosts: () => ['dsh.example.com'],
-      getApiFetchHandler: () => ({ fetch: async () => new Response('proxied') }),
     })
     const innerCalls: string[] = []
     webServer.register({
@@ -268,14 +258,13 @@ describe('JWT verification is skipped when it cannot change the decision', () =>
     return { route, innerCalls, calls: counted.calls, disposers }
   }
 
-  it('does not verify ordinary APIs when ordinary=off', async () => {
+  it('does not verify ordinary APIs when ordinary=off and no JWT is present', async () => {
     const { route, innerCalls, calls, disposers } = await mountApi({ ordinary: 'off' })
     const result = await invoke(route.handler, {
-      url: '/api/llm.models',
+      url: '/api/llm/listProviders',
       headers: {
         host: 'dsh.example.com',
         origin: 'https://dsh.example.com',
-        'cf-access-jwt-assertion': 'not-a-jwt',
       },
     })
     expect(result.status).toBe(200)
@@ -285,10 +274,27 @@ describe('JWT verification is skipped when it cannot change the decision', () =>
     for (const dispose of disposers) dispose()
   })
 
+  it('verifies a present JWT on ordinary=off so it can replace the DSH session cookie', async () => {
+    const { route, innerCalls, calls, disposers } = await mountApi({ ordinary: 'off' })
+    const result = await invoke(route.handler, {
+      url: '/api/llm/listProviders',
+      headers: {
+        host: 'dsh.example.com',
+        origin: 'https://dsh.example.com',
+        'cf-access-jwt-assertion': 'not-a-jwt',
+      },
+    })
+    expect(result.status).toBe(200)
+    expect(result.body).toBe('inner')
+    expect(innerCalls).toEqual(['inner'])
+    expect(calls()).toBe(1)
+    for (const dispose of disposers) dispose()
+  })
+
   it('does not verify when Host/Origin already failed', async () => {
     const { route, innerCalls, calls, disposers } = await mountApi({ ordinary: 'required' })
     const result = await invoke(route.handler, {
-      url: '/api/settings.describe',
+      url: '/api/settings/describe',
       headers: {
         host: 'evil.example',
         origin: 'https://evil.example',
@@ -304,7 +310,7 @@ describe('JWT verification is skipped when it cannot change the decision', () =>
   it('still verifies remote privileged APIs when ordinary=off', async () => {
     const { route, innerCalls, calls, disposers } = await mountApi({ ordinary: 'off' })
     const result = await invoke(route.handler, {
-      url: '/api/settings.describe',
+      url: '/api/settings/describe',
       headers: {
         host: 'dsh.example.com',
         origin: 'https://dsh.example.com',
@@ -344,7 +350,6 @@ describe('wrap-layer authorization paths', () => {
         },
       },
       getTrustedHosts: () => ['dsh.example.com'],
-      getApiFetchHandler: () => ({ fetch: async () => new Response('proxied') }),
     })
     webServer.register({
       kind: 'prefix',
@@ -357,7 +362,7 @@ describe('wrap-layer authorization paths', () => {
     const route = webServer.routes.get('prefix:/api')
     if (route === undefined) throw new Error('route missing')
     const result = await invoke(route.handler, {
-      url: '/api/settings.describe',
+      url: '/api/settings/describe',
       headers: { host: 'localhost' },
     })
     expect(result.status).toBe(200)
@@ -366,7 +371,7 @@ describe('wrap-layer authorization paths', () => {
     for (const dispose of disposers) dispose()
   })
 
-  it('denies remote privileged when apiProxy is missing', async () => {
+  it('hands remote privileged to the original handler after a valid JWT', async () => {
     const webServer = createFakeWebServer()
     const disposers: Array<() => void> = []
     installServerCompat({
@@ -382,7 +387,6 @@ describe('wrap-layer authorization paths', () => {
         },
       },
       getTrustedHosts: () => ['dsh.example.com'],
-      getApiFetchHandler: () => undefined,
     })
     webServer.register({
       kind: 'prefix',
@@ -395,15 +399,15 @@ describe('wrap-layer authorization paths', () => {
     const route = webServer.routes.get('prefix:/api')
     if (route === undefined) throw new Error('route missing')
     const result = await invoke(route.handler, {
-      url: '/api/settings.describe',
+      url: '/api/settings/describe',
       headers: {
         host: 'dsh.example.com',
         origin: 'https://dsh.example.com',
         'cf-access-jwt-assertion': 'valid-looking',
       },
     })
-    expect(result.status).toBe(403)
-    expect(result.body).toBe('forbidden')
+    expect(result.status).toBe(200)
+    expect(result.body).toBe('inner')
     for (const dispose of disposers) dispose()
   })
 
@@ -423,17 +427,16 @@ describe('wrap-layer authorization paths', () => {
         },
       },
       getTrustedHosts: () => ['dsh.example.com'],
-      getApiFetchHandler: () => undefined,
     })
     let inner = 0
     webServer.registerUpgrade({
-      path: '/api/events.mux',
+      path: '/api/remote.mux',
       handler: async () => { inner += 1 },
     })
-    const route = webServer.upgrades.get('/api/events.mux')
+    const route = webServer.upgrades.get('/api/remote.mux')
     if (route === undefined) throw new Error('upgrade missing')
     const result = await invokeUpgrade(route.handler, {
-      url: '/api/events.mux',
+      url: '/api/remote.mux',
       headers: {
         host: 'dsh.example.com',
         origin: 'https://dsh.example.com',
@@ -460,17 +463,16 @@ describe('wrap-layer authorization paths', () => {
         },
       },
       getTrustedHosts: () => ['dsh.example.com'],
-      getApiFetchHandler: () => undefined,
     })
     let inner = 0
     webServer.registerUpgrade({
-      path: '/api/events.mux',
+      path: '/api/remote.mux',
       handler: async () => { inner += 1 },
     })
-    const route = webServer.upgrades.get('/api/events.mux')
+    const route = webServer.upgrades.get('/api/remote.mux')
     if (route === undefined) throw new Error('upgrade missing')
     const result = await invokeUpgrade(route.handler, {
-      url: '/api/events.mux',
+      url: '/api/remote.mux',
       headers: {
         host: 'dsh.example.com',
         origin: 'https://dsh.example.com',
@@ -479,6 +481,219 @@ describe('wrap-layer authorization paths', () => {
     })
     expect(result.status).toBe(403)
     expect(inner).toBe(0)
+    for (const dispose of disposers) dispose()
+  })
+})
+
+describe('Access JWT substitutes for the DSH launch-token cookie', () => {
+  const config = {
+    teamDomain: 'https://example.cloudflareaccess.com',
+    audiences: ['aud'],
+    ordinary: 'off' as const,
+    envLocked: { teamDomain: false, audiences: false, ordinary: false },
+  }
+
+  function createConnection() {
+    return {
+      requestRejection(_req: IncomingMessage): 401 | 403 | undefined {
+        return 401
+      },
+      authorizeIndex(_req: IncomingMessage, res: ServerResponse): boolean {
+        res.writeHead(401)
+        res.end('dsh web authentication required')
+        return false
+      },
+    }
+  }
+
+  it('skips requestRejection 401 on remote after a valid JWT', async () => {
+    const webServer = createFakeWebServer()
+    const disposers: Array<() => void> = []
+    const connection = createConnection()
+    const originalRejection = connection.requestRejection
+    installServerCompat({
+      webServer,
+      logger: { info() {}, warn() {} },
+      effect: collectEffects(disposers),
+      get() { return undefined },
+      inject(_deps, callback) {
+        callback({ connection })
+      },
+    }, {
+      config,
+      verifier: {
+        async verify() {
+          return { outcome: 'valid', reason: null, audienceMatched: 'aud' }
+        },
+      },
+      getTrustedHosts: () => ['dsh.example.com'],
+    })
+    webServer.register({
+      kind: 'prefix',
+      path: '/api',
+      handler: async (req, res) => {
+        const rejection = connection.requestRejection(req)
+        if (rejection !== undefined) {
+          res.writeHead(rejection)
+          res.end('blocked')
+          return
+        }
+        res.writeHead(200)
+        res.end('inner')
+      },
+    })
+    const route = webServer.routes.get('prefix:/api')
+    if (route === undefined) throw new Error('route missing')
+    const result = await invoke(route.handler, {
+      url: '/api/settings/describe',
+      headers: {
+        host: 'dsh.example.com',
+        origin: 'https://dsh.example.com',
+        'cf-access-jwt-assertion': 'valid',
+      },
+    })
+    expect(result.status).toBe(200)
+    expect(result.body).toBe('inner')
+    for (const dispose of disposers) dispose()
+    expect(connection.requestRejection).toBe(originalRejection)
+  })
+
+  it('keeps the DSH cookie requirement on loopback', async () => {
+    const webServer = createFakeWebServer()
+    const disposers: Array<() => void> = []
+    const connection = createConnection()
+    installServerCompat({
+      webServer,
+      logger: { info() {}, warn() {} },
+      effect: collectEffects(disposers),
+      get() { return undefined },
+      inject(_deps, callback) {
+        callback({ connection })
+      },
+    }, {
+      config,
+      verifier: {
+        async verify() {
+          return { outcome: 'valid', reason: null, audienceMatched: 'aud' }
+        },
+      },
+      getTrustedHosts: () => ['dsh.example.com'],
+    })
+    webServer.register({
+      kind: 'prefix',
+      path: '/api',
+      handler: async (req, res) => {
+        const rejection = connection.requestRejection(req)
+        if (rejection !== undefined) {
+          res.writeHead(rejection)
+          res.end('blocked')
+          return
+        }
+        res.writeHead(200)
+        res.end('inner')
+      },
+    })
+    const route = webServer.routes.get('prefix:/api')
+    if (route === undefined) throw new Error('route missing')
+    const result = await invoke(route.handler, {
+      url: '/api/settings/describe',
+      headers: { host: 'localhost' },
+    })
+    expect(result.status).toBe(401)
+    expect(result.body).toBe('blocked')
+    for (const dispose of disposers) dispose()
+  })
+
+  it('lets remote index through authorizeIndex after a valid JWT', async () => {
+    const fallbacks: Array<(req: IncomingMessage, res: ServerResponse) => void | Promise<void>> = []
+    const webServer = createFakeWebServer()
+    webServer.registerFallback = (handler) => {
+      fallbacks.push(handler)
+      return () => { fallbacks.pop() }
+    }
+    const disposers: Array<() => void> = []
+    const connection = createConnection()
+    installServerCompat({
+      webServer,
+      logger: { info() {}, warn() {} },
+      effect: collectEffects(disposers),
+      get() { return undefined },
+      inject(_deps, callback) {
+        callback({ connection })
+      },
+    }, {
+      config,
+      verifier: {
+        async verify() {
+          return { outcome: 'valid', reason: null, audienceMatched: 'aud' }
+        },
+      },
+      getTrustedHosts: () => ['dsh.example.com'],
+    })
+    webServer.registerFallback((req, res) => {
+      if (!connection.authorizeIndex(req, res)) return
+      res.writeHead(200)
+      res.end('index')
+    })
+    const handler = fallbacks.at(-1)
+    if (handler === undefined) throw new Error('fallback missing')
+    const result = await invoke(handler, {
+      url: '/',
+      headers: {
+        host: 'dsh.example.com',
+        origin: 'https://dsh.example.com',
+        'cf-access-jwt-assertion': 'valid',
+      },
+    })
+    expect(result.status).toBe(200)
+    expect(result.body).toBe('index')
+    for (const dispose of disposers) dispose()
+  })
+
+  it('skips the DSH cookie on Access login callbacks marked cross-site', async () => {
+    const fallbacks: Array<(req: IncomingMessage, res: ServerResponse) => void | Promise<void>> = []
+    const webServer = createFakeWebServer()
+    webServer.registerFallback = (handler) => {
+      fallbacks.push(handler)
+      return () => { fallbacks.pop() }
+    }
+    const disposers: Array<() => void> = []
+    const connection = createConnection()
+    installServerCompat({
+      webServer,
+      logger: { info() {}, warn() {} },
+      effect: collectEffects(disposers),
+      get() { return undefined },
+      inject(_deps, callback) {
+        callback({ connection })
+      },
+    }, {
+      config,
+      verifier: {
+        async verify() {
+          return { outcome: 'valid', reason: null, audienceMatched: 'aud' }
+        },
+      },
+      getTrustedHosts: () => ['dsh.luawig.top'],
+    })
+    webServer.registerFallback((req, res) => {
+      if (!connection.authorizeIndex(req, res)) return
+      res.writeHead(200)
+      res.end('index')
+    })
+    const handler = fallbacks.at(-1)
+    if (handler === undefined) throw new Error('fallback missing')
+    const result = await invoke(handler, {
+      url: '/',
+      headers: {
+        host: 'dsh.luawig.top',
+        'sec-fetch-site': 'cross-site',
+        origin: 'https://example.cloudflareaccess.com',
+        'cf-access-jwt-assertion': 'valid',
+      },
+    })
+    expect(result.status).toBe(200)
+    expect(result.body).toBe('index')
     for (const dispose of disposers) dispose()
   })
 })

@@ -8,7 +8,7 @@ This is a dual-face **Profile Bundle + Web Client** plugin. It does **not** repl
 
 It does not ship a login page, password store, MFA, session table, or Cloudflare API client.
 
-Live-tested against DeepSeek Harness **`0.1.1-rc.2`**. Do not assume newer DSH releases work until the [compatibility matrix](#compatibility) is updated.
+Plugin **`2.0.x`** targets DeepSeek Harness **`0.1.5-alpha.1`**. Plugin **`1.0.x`** is the line before DSH `0.1.2` (live-tested on `0.1.1-rc.2`). Do not assume other DSH releases work until the [compatibility matrix](#compatibility) is updated.
 
 ## Architecture
 
@@ -44,7 +44,7 @@ export DSH_CF_ACCESS_TEAM_DOMAIN=https://example.cloudflareaccess.com
 export DSH_CF_ACCESS_AUDIENCES=your-access-application-aud
 ```
 
-5. Open the remote UI through Access, hard-refresh once, and load Settings.
+5. Open the site through Access and hard-refresh once, then load Settings. A valid `Cf-Access-Jwt-Assertion` at Origin replaces DSH's launch-token cookie for remote Hosts. Loopback still needs the `?token=` URL printed by `dsh web`.
 
 Confirm the bundle with `dsh --profile web --dump-config`: a layer named `dsh-cloudflare-access` and a plugin row `id: cloudflare-access`.
 
@@ -55,13 +55,13 @@ Remote privileged requests must pass **both**:
 1. DSH Host / Origin / `sec-fetch-site` checks (`--trusted-host` remains mandatory).
 2. A valid Cloudflare Access JWT (signature, `iss`, `aud`, expiry; about 30 seconds of clock skew is allowed).
 
-A valid JWT never authorizes an arbitrary Host or Origin. Loopback (`localhost` / `127.0.0.1` / `::1`) does not require a JWT, so `SSH Tunnel → localhost → DSH` keeps working. Remote privileged APIs always require a JWT in v1.0.
+A valid JWT never authorizes an arbitrary Host or Origin. Loopback (`localhost` / `127.0.0.1` / `::1`) does not require a JWT, so `SSH Tunnel → localhost → DSH` keeps working. Remote privileged APIs always require a JWT in v2.0.
 
 Keep Origin reachable only from Cloudflare (or equivalent ingress). Installing this plugin is not a reason to put DSH on the public internet. Details: [SECURITY.md](./SECURITY.md).
 
 ![Remote privileged request path](./docs/assets/archify/privileged-request.svg)
 
-Host/Origin runs first. A valid JWT never rewrites Host to loopback. Privileged success goes to `apiProxy`; missing or invalid JWT returns 401/403 and never enters the privileged implementation. Loopback does not read JWT.
+Host/Origin runs first. A valid JWT never rewrites Host to loopback. Privileged success goes to the original `/api` handler (DSH Remote). On a remote trusted host, a valid Access JWT also skips DSH's launch-token cookie. Missing or invalid JWT returns 401/403 and never enters the privileged implementation. Loopback does not read JWT and still uses the official DSH token/cookie.
 
 Forward `Host`, `Origin`, and `Cf-Access-Jwt-Assertion`. Do not strip the assertion header. Do not trust the `CF_Authorization` cookie.
 
@@ -89,7 +89,7 @@ Uninstall:
 dsh plugin --profile web remove dsh-cloudflare-access
 ```
 
-After unload, DSH restores the official remote privileged loopback pin. Restart if the running process still has the old fiber.
+After unload, this plugin's JWT wrap is gone. Restart if the running process still has the old fiber.
 
 ## Configure
 
@@ -145,7 +145,7 @@ Missing `teamDomain` or `audiences`: the plugin still starts, loopback is unchan
 
 ## Ordinary API modes
 
-`auth.ordinary` applies only to **remote non-privileged** APIs, including `/api/events.mux` and `/api/events.host`. Loopback ignores it. Host/Origin always runs first.
+`auth.ordinary` applies only to **remote non-privileged** APIs, including `/api/remote.mux`. Loopback ignores it. Host/Origin always runs first.
 
 | Mode | No JWT | Valid JWT | Invalid JWT |
 | --- | --- | --- | --- |
@@ -160,21 +160,22 @@ Privileged remote APIs always require a valid JWT, regardless of this setting.
 | Symptom | Check |
 | --- | --- |
 | Remote Settings still unavailable | Access must sit in front of the site; hard-refresh so the client module loads before Settings; confirm `Cf-Access-Jwt-Assertion` reaches Origin. |
-| Settings UI never calls `settings.describe` | This package sets `dsh.client.immediately: true`. Reinstall if an older tarball omitted that. |
-| 401 on `settings.*` | Header missing. Inspect reverse-proxy forwarding, not cookies. |
-| 403 on `settings.*` | Invalid `iss`/`aud`/signature/expiry, unconfigured plugin, Host/Origin mismatch, or Origin clock more than ~30s off. |
-| Events WebSocket fails when `ordinary=required` | `/api/events.mux` and `/api/events.host` follow the ordinary policy. Missing JWT → 401; invalid JWT → 403. |
+| Settings UI never calls `settings/describe` | This package sets `dsh.client.immediately: true`. Reinstall if an older tarball omitted that. |
+| 401 on `settings/*` | Access header missing or not forwarded. Inspect reverse-proxy forwarding of `Cf-Access-Jwt-Assertion`. Loopback still needs the `?token=` URL printed by `dsh web`. |
+| 403 on `settings/*` | Invalid `iss`/`aud`/signature/expiry, unconfigured plugin, Host/Origin mismatch, or Origin clock more than ~30s off. |
+| Events WebSocket fails when `ordinary=required` | `/api/remote.mux` follows the ordinary policy. Missing JWT → 401; invalid JWT → 403. |
 | Loopback Settings broken | Unload the plugin; loopback must not require JWT. File a bug if it does. |
 | JWKS / key rotation failures | Origin must reach `https://<team>/cdn-cgi/access/certs`. No config change after Cloudflare rotates keys. |
 | Logs | Categories only (`expired`, `invalid_signature`, `issuer_mismatch`, `audience_mismatch`, `missing_token`, `jwks_unavailable`, `unconfigured`). Tokens are never logged. |
 
-v1.0 does not authorize `host.pickDirectory` or `host.openPath`. Some native-host UI may still appear; those RPCs stay rejected.
+This plugin does not authorize `host.pickDirectory` or `host.openPath`. Some native-host UI may still appear.
 
 ## Compatibility
 
 | Plugin | DSH | Status |
 | --- | --- | --- |
-| 1.0.x | 0.1.1-rc.2 | Live-tested (Web profile, remote Settings / Credentials) |
+| 1.0.x | 0.1.1-rc.2（0.1.2 之前） | Live-tested (Web profile, remote Settings / Credentials). `apiProxy` + privileged pin. Not compatible with DSH 0.1.2+. |
+| 2.0.x | 0.1.5-alpha.1 | Live-tested on a Web profile behind Cloudflare Access (remote Settings without DSH `?token=`). Unit/integration tests. CI does not start a DSH process. |
 
 Do not assume newer DSH releases work until this matrix is updated.
 

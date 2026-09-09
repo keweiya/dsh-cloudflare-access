@@ -28,7 +28,7 @@ accepted
 - reason: `JwtFailureReason | null`
 - audienceMatched: `string | null`
 
-v0.1 不持久化、不缓存该实体。每次请求现场验证。
+不持久化、不缓存该实体。每次请求现场验证。
 
 ### JwtFailureReason
 状态值：

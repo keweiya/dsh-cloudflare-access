@@ -1,7 +1,7 @@
 /**
- * DSH 0.1.1-rc.2 compatible Host/Origin fence copy (same shape as 0.1.0-rc.5).
+ * DSH 0.1.5-alpha.1 compatible Host/Origin fence copy.
  * Kept in compat so JWT core does not import DSH internals.
- * Source of truth in DSH: packages/client/connection/src/api-request-trust.ts
+ * Source of truth in DSH: @deepseek-ai/dsh-client-connection api-request-trust.
  */
 export function isLoopbackHostname(hostname: string): boolean {
   if (hostname === 'localhost' || hostname === '[::1]') return true
@@ -50,9 +50,7 @@ export function isTrustedApiRequest(
   headers: { get(name: string): string | null } | Record<string, string | string[] | undefined>,
   trustedHosts: readonly string[],
 ): boolean {
-  const host = header(headers, 'host')
-  if (host === undefined) return false
-  const hostUrl = parseAuthority(host)
+  const hostUrl = requestHostUrl(headers)
   if (hostUrl === undefined) return false
   if (!isLoopbackHostname(hostUrl.hostname) && !isTrustedAuthority(hostUrl, trustedHosts)) return false
   if (header(headers, 'sec-fetch-site') === 'cross-site') return false
@@ -63,6 +61,27 @@ export function isTrustedApiRequest(
   } catch {
     return false
   }
+}
+
+/**
+ * Host 是否为已声明的远程 trusted-host。
+ * 不看 Origin / sec-fetch-site：Access 登录回调经常是 cross-site 导航。
+ */
+export function requestRemoteHostTrusted(
+  headers: { get(name: string): string | null } | Record<string, string | string[] | undefined>,
+  trustedHosts: readonly string[],
+): boolean {
+  const hostUrl = requestHostUrl(headers)
+  if (hostUrl === undefined || isLoopbackHostname(hostUrl.hostname)) return false
+  return isTrustedAuthority(hostUrl, trustedHosts)
+}
+
+function requestHostUrl(
+  headers: { get(name: string): string | null } | Record<string, string | string[] | undefined>,
+): URL | undefined {
+  const host = header(headers, 'host')
+  if (host === undefined) return undefined
+  return parseAuthority(host)
 }
 
 export function requestIsLoopback(

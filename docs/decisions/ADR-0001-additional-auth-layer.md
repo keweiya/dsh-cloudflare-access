@@ -4,7 +4,7 @@
 accepted
 
 ## 背景
-DSH 的 `/api` 已有 Host/Origin/`sec-fetch-site` 栅栏，以及 privileged 方法的 loopback pin。本插件要把 Cloudflare Access 身份接进 DSH，同时规格要求有效 JWT 不得绕过原防护。
+DSH 的 `/api` 已有 Host/Origin/`sec-fetch-site` 栅栏。本插件要把 Cloudflare Access 身份接进 DSH，同时规格要求有效 JWT 不得绕过原防护。
 
 ## 决策
 把插件定义为 additional authentication / authorization：

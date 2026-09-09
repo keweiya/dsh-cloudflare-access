@@ -11,7 +11,7 @@
         "id": "happy-path",
         "label": "Allow path",
         "focus": ["req", "loopback", "host", "jwt", "proxy"],
-        "note": "Host/Origin runs before JWT. Success forwards to apiProxy."
+        "note": "Host/Origin runs before JWT. Success uses the original /api handler."
       },
       {
         "id": "loopback-bypass",
@@ -46,7 +46,7 @@
     { "id": "host", "lane": "decide", "col": 2, "type": "security", "label": "Host/Origin?", "sublabel": "trusted-host first" },
     { "id": "jwt", "lane": "decide", "col": 4, "type": "security", "label": "JWT valid?", "sublabel": "privileged only" },
     { "id": "deny", "lane": "stop", "col": 4, "type": "security", "label": "Deny", "sublabel": "401 or 403" },
-    { "id": "proxy", "lane": "run", "col": 5, "type": "backend", "label": "apiProxy", "sublabel": "bridge forward" }
+    { "id": "proxy", "lane": "run", "col": 5, "type": "backend", "label": "DSH /api", "sublabel": "Remote + session" }
   ],
   "edges": [
     { "id": "req-loopback", "from": "req", "to": "loopback", "variant": "emphasis", "fromSide": "bottom", "toSide": "top", "route": "drop" },
@@ -55,7 +55,7 @@
     { "id": "host-fail", "from": "host", "to": "inner", "label": "fail", "variant": "dashed", "role": "branch", "fromSide": "bottom", "toSide": "top", "route": "drop", "labelDx": 36, "labelDy": 12 },
     { "id": "host-ok", "from": "host", "to": "jwt", "label": "privileged", "variant": "emphasis", "labelDy": -22 },
     { "id": "jwt-no", "from": "jwt", "to": "deny", "label": "missing / invalid", "variant": "security", "role": "error", "fromSide": "bottom", "toSide": "top", "route": "drop", "labelSegment": 1, "labelDx": -36, "labelDy": 16 },
-    { "id": "jwt-yes", "from": "jwt", "to": "proxy", "label": "bridge → apiProxy", "variant": "emphasis", "fromSide": "right", "toSide": "left", "labelDy": 25 }
+    { "id": "jwt-yes", "from": "jwt", "to": "proxy", "label": "original handler", "variant": "emphasis", "fromSide": "right", "toSide": "left", "labelDy": 25 }
   ],
   "cards": [
     { "dot": "rose", "title": "Order is fixed", "items": ["Host/Origin first, then JWT", "A valid JWT must not rewrite Host to loopback"] },

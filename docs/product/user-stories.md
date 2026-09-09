@@ -24,7 +24,7 @@ accepted
 - GIVEN 浏览器已由 Cloudflare Access 认证，且 Origin 收到有效 `Cf-Access-Jwt-Assertion`
 - AND Host/Origin 通过 DSH 原检查
 - WHEN 用户打开 Settings 并保存配置
-- THEN `settings.describe` / `settings.mutate` 等调用成功，UI 不再把 persistence 标为 unavailable
+- THEN `settings/describe` / `settings/mutate` 等调用成功，UI 不再把 persistence 标为 unavailable
 
 #### 备注
 - 关联场景：场景 A

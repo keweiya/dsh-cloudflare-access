@@ -16,7 +16,7 @@ ConfigResolver
 ## 非职责
 - 验证 JWT。
 - 决定某个 RPC 是否 privileged。
-- 向 Web Settings 注册独立 UI（v0.1 不要求）。
+- 向 Web Settings 注册独立 UI（当前不要求）。
 
 ## 服务规则
 RULE-SERVICE-CONFIG-1: 环境变量键存在（即使值为空字符串）即视为锁定该字段；空字符串按未配置处理，并保持锁定，防止 Web Settings 填入另一个 team。

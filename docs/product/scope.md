@@ -5,7 +5,7 @@ accepted
 
 ## 当前版本范围
 
-v0.1.0 交付 Cloudflare Access JWT 在 DSH Origin 的再验证，以及远程配置面授权：
+当前交付 Cloudflare Access JWT 在 DSH Origin 的再验证，以及远程配置面授权：
 
 - JWT 验证：`Cf-Access-Jwt-Assertion`、iss、多 aud、exp/nbf、Remote JWKS。
 - 授权：loopback bypass；远程 privileged 固定要求 JWT；普通 API 三种模式。
@@ -13,7 +13,7 @@ v0.1.0 交付 Cloudflare Access JWT 在 DSH Origin 的再验证，以及远程�
 - 包装：正式 `dsh.bundle` + `dsh.client`，Env/Cordis 配置。
 - 质量：单元测试、集成测试、README、SECURITY.md、CHANGELOG.md、MIT npm 包。
 
-目标 DSH 版本：live-tested `0.1.1-rc.2`。`0.1.0-rc.5` 仅作为 hook 源码调研。兼容性矩阵只写实测版本，不提前扩大。
+目标 DSH 版本：`0.1.5-alpha.1`（已对照官方 npm 包扩展点）。兼容性矩阵只写该版本。
 
 ## 明确不做
 
@@ -29,7 +29,7 @@ v0.1.0 交付 Cloudflare Access JWT 在 DSH Origin 的再验证，以及远程�
 
 - 兼容 DSH 插件市场安装。
 - 随 DSH 新版本扩展 `compat/`，而不是放宽未测 peer range。
-- 可选：按 Cloudflare identity group 做只读/读写分离（当前无需求，不进入 v0.1）。
+- 可选：按 Cloudflare identity group 做只读/读写分离（当前无需求）。
 - 可选：隐藏远程页上因 capability wrap 出现但 Server 仍拒绝的 native host UI。
 
 ## 范围变更规则

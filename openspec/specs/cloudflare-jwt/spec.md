@@ -97,7 +97,7 @@ The plugin SHALL use a Remote JWK Set at `<teamDomain>/cdn-cgi/access/certs`. It
 - **THEN** the outcome is `invalid` / `jwks_unavailable`
 
 ### Requirement: No JWT result cache
-The plugin MUST NOT cache per-token verification results in v0.1. Only JWKS MAY be cached.
+The plugin MUST NOT cache per-token verification results. Only JWKS MAY be cached.
 
 #### Scenario: Two requests with the same token
 - **GIVEN** the same valid JWT on two sequential requests

@@ -10,7 +10,7 @@ describe('authorization policy', () => {
     expect(decide({
       isLoopback: true,
       hostOriginTrusted: true,
-      method: 'settings.describe',
+      method: 'settings/describe',
       ordinary: 'required',
       jwt: missing,
     })).toEqual({ effect: 'allow', class: 'loopback', reason: null })
@@ -20,7 +20,7 @@ describe('authorization policy', () => {
     expect(decide({
       isLoopback: false,
       hostOriginTrusted: true,
-      method: 'settings.mutate',
+      method: 'settings/mutate',
       ordinary: 'off',
       jwt: valid,
     }).effect).toBe('allow')
@@ -30,7 +30,7 @@ describe('authorization policy', () => {
     const decision = decide({
       isLoopback: false,
       hostOriginTrusted: true,
-      method: 'credentials.set',
+      method: 'credentials/set',
       ordinary: 'off',
       jwt: missing,
     })
@@ -42,7 +42,7 @@ describe('authorization policy', () => {
     const decision = decide({
       isLoopback: false,
       hostOriginTrusted: true,
-      method: 'llm.discoverModels',
+      method: 'llm/discoverModels',
       ordinary: 'off',
       jwt: invalid,
     })
@@ -54,7 +54,7 @@ describe('authorization policy', () => {
     expect(decide({
       isLoopback: false,
       hostOriginTrusted: true,
-      method: 'llm.models',
+      method: 'llm/listProviders',
       ordinary: 'off',
       jwt: missing,
     }).effect).toBe('allow')
@@ -64,7 +64,7 @@ describe('authorization policy', () => {
     const base = {
       isLoopback: false,
       hostOriginTrusted: true,
-      method: 'agentPreset.list',
+      method: 'agentPresets/list',
       ordinary: 'optional' as const,
     }
     expect(decide({ ...base, jwt: missing }).effect).toBe('allow')
@@ -76,7 +76,7 @@ describe('authorization policy', () => {
     const base = {
       isLoopback: false,
       hostOriginTrusted: true,
-      method: 'events.mux',
+      method: 'remote.mux',
       ordinary: 'required' as const,
     }
     expect(decide({ ...base, jwt: missing }).reason).toBe('missing_token')
@@ -88,7 +88,7 @@ describe('authorization policy', () => {
     const decision = decide({
       isLoopback: false,
       hostOriginTrusted: false,
-      method: 'settings.describe',
+      method: 'settings/describe',
       ordinary: 'off',
       jwt: valid,
     })
@@ -99,14 +99,16 @@ describe('authorization policy', () => {
   it('does not treat native host methods as plugin-authorized privileged', () => {
     expect(isPrivilegedMethod('host.openPath')).toBe(false)
     expect(isPrivilegedMethod('host.pickDirectory')).toBe(false)
-    expect(isPrivilegedMethod('agentPreset.list')).toBe(false)
+    expect(isPrivilegedMethod('agentPresets/list')).toBe(false)
+    expect(isPrivilegedMethod('agentPresets/select')).toBe(false)
+    expect(isPrivilegedMethod('settings.describe')).toBe(false)
   })
 
   it('skips JWT verification unless the decision can change', () => {
-    expect(jwtParticipates({ method: 'llm.models', ordinary: 'off', tokenPresent: true })).toBe(false)
-    expect(jwtParticipates({ method: 'events.mux', ordinary: 'optional', tokenPresent: false })).toBe(false)
-    expect(jwtParticipates({ method: 'events.mux', ordinary: 'optional', tokenPresent: true })).toBe(true)
-    expect(jwtParticipates({ method: 'events.host', ordinary: 'required', tokenPresent: false })).toBe(true)
-    expect(jwtParticipates({ method: 'settings.describe', ordinary: 'off', tokenPresent: false })).toBe(true)
+    expect(jwtParticipates({ method: 'llm/listProviders', ordinary: 'off', tokenPresent: true })).toBe(false)
+    expect(jwtParticipates({ method: 'remote.mux', ordinary: 'optional', tokenPresent: false })).toBe(false)
+    expect(jwtParticipates({ method: 'remote.mux', ordinary: 'optional', tokenPresent: true })).toBe(true)
+    expect(jwtParticipates({ method: 'remote.mux', ordinary: 'required', tokenPresent: false })).toBe(true)
+    expect(jwtParticipates({ method: 'settings/describe', ordinary: 'off', tokenPresent: false })).toBe(true)
   })
 })

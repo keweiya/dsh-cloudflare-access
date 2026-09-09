@@ -1,6 +1,6 @@
 # Capability: dsh-authorization
 
-在 DSH Host/Origin 检查之后，把 Cloudflare JWT 验证结果映射为远程配置面授权。Loopback 保持官方行为；远程 privileged 固定要求有效 JWT；普通 API 按 `off | optional | required` 叠加。有效 JWT 不得绕过 Host/Origin，也不得开放 `host.pickDirectory` / `host.openPath`。
+在 DSH Host/Origin 检查之后，把 Cloudflare JWT 验证结果映射为远程配置面授权。Loopback 保持官方行为；远程 privileged 固定要求有效 JWT；普通 API 按 `off | optional | required` 叠加。有效 JWT 不得绕过 Host/Origin，也不得把 native directory-picker / `host.openPath` 列入本插件放行集合。
 
 ## Requirements
 
@@ -9,13 +9,13 @@ The plugin SHALL leave loopback requests on DSH original behavior and MUST NOT r
 
 #### Scenario: Loopback privileged without JWT
 - **GIVEN** Host is loopback
-- **AND** the RPC is `settings.describe`
+- **AND** the RPC is `settings/describe`
 - **AND** no `Cf-Access-Jwt-Assertion` is present
 - **WHEN** authorization runs
 - **THEN** the decision is allow
 
 ### Requirement: Host and Origin remain mandatory
-A valid Cloudflare JWT MUST NOT authorize a request that fails DSH Host/Origin validation. The plugin MUST apply Host/Origin before any privileged bypass of the DSH loopback pin.
+A valid Cloudflare JWT MUST NOT authorize a request that fails DSH Host/Origin validation. The plugin MUST apply Host/Origin before handing an allowed privileged request to the original `/api` handler.
 
 #### Scenario: Valid JWT with invalid Host
 - **GIVEN** a cryptographically valid Access JWT
@@ -25,25 +25,25 @@ A valid Cloudflare JWT MUST NOT authorize a request that fails DSH Host/Origin v
 - **AND** the reason is host/origin rejection, not JWT success
 
 ### Requirement: Remote privileged APIs require JWT
-Remote calls to the v0.1 privileged method set MUST require a valid Cloudflare Access JWT. v0.1 MUST NOT provide a configuration switch that disables this requirement. Missing configuration MUST fail closed for remote privileged APIs while still allowing the plugin to start.
+Remote calls to the privileged method set MUST require a valid Cloudflare Access JWT. The plugin MUST NOT provide a configuration switch that disables this requirement. Missing configuration MUST fail closed for remote privileged APIs while still allowing the plugin to start.
 
-Privileged methods that MAY be authorized remotely with a valid JWT are exactly: `settings.describe`, `settings.openDocument`, `settings.update`, `settings.replace`, `settings.mutate`, `credentials.describe`, `credentials.set`, `credentials.unset`, `agentPreset.read`, `agentPreset.copy`, `agentPreset.openDocument`, `agentPreset.remove`, `llm.discoverModels`.
+Privileged methods that MAY be authorized remotely with a valid JWT are exactly: `settings/describe`, `settings/openSettingsDocument`, `settings/update`, `settings/replace`, `settings/mutate`, `settings/canOpenAgentPresetDirectory`, `settings/openAgentPresetDirectory`, `credentials/describe`, `credentials/set`, `credentials/unset`, `agentPresets/read`, `agentPresets/copy`, `agentPresets/deletePreset`, `llm/discoverModels`.
 
-The plugin MUST NOT remotely authorize `host.pickDirectory` or `host.openPath` even when the JWT is valid.
+The plugin MUST NOT treat `host.pickDirectory` or `host.openPath` as plugin-authorized privileged methods even when the JWT is valid.
 
 #### Scenario: Remote valid JWT
 - **GIVEN** a remote trusted-host request with a valid JWT
-- **WHEN** `settings.mutate` is called
+- **WHEN** `settings/mutate` is called
 - **THEN** the decision is allow
 
 #### Scenario: Remote missing JWT
 - **GIVEN** a remote trusted-host request with no JWT
-- **WHEN** `credentials.set` is called
+- **WHEN** `credentials/set` is called
 - **THEN** the decision is deny / `missing_token`
 
 #### Scenario: Remote invalid JWT
 - **GIVEN** a remote trusted-host request with an invalid JWT
-- **WHEN** `llm.discoverModels` is called
+- **WHEN** `llm/discoverModels` is called
 - **THEN** the decision is deny with a non-missing failure reason
 
 #### Scenario: Unconfigured team
@@ -52,17 +52,32 @@ The plugin MUST NOT remotely authorize `host.pickDirectory` or `host.openPath` e
 - **THEN** the decision is deny / `unconfigured`
 - **AND** the plugin process remains started
 
-#### Scenario: Native host methods stay pinned
+#### Scenario: Native host methods stay off the allow list
 - **GIVEN** a remote trusted-host request with a valid JWT
 - **WHEN** `host.openPath` or `host.pickDirectory` is called
-- **THEN** the plugin MUST NOT bypass DSH loopback pin for that method
+- **THEN** the plugin MUST NOT classify that method as privileged-allow
+
+### Requirement: Remote Access JWT substitutes for the DSH launch-token cookie
+On a remote trusted host, a cryptographically valid Access JWT MUST skip DSH `requestRejection` / `authorizeIndex` cookie failures for the index, `/api`, and `/api/remote.mux`. Loopback MUST keep the official launch-token cookie. A valid JWT MUST NOT skip Host/Origin rejection.
+
+#### Scenario: Remote valid JWT without DSH cookie
+- **GIVEN** a remote trusted-host request with a valid JWT
+- **AND** no DSH `dsh-auth-*` cookie
+- **WHEN** `settings/describe` or `GET /` is handled
+- **THEN** the plugin MUST NOT fail closed on DSH browser-session 401
+
+#### Scenario: Loopback keeps the DSH cookie
+- **GIVEN** Host is loopback
+- **AND** no DSH `dsh-auth-*` cookie
+- **WHEN** a privileged RPC is requested
+- **THEN** DSH original cookie authentication still applies
 
 ### Requirement: Ordinary API modes
 Ordinary (non-privileged) remote APIs SHALL follow `auth.ordinary` after Host/Origin succeeds. Loopback MUST ignore this setting.
 
-- `off` (default): JWT is not used.
+- `off` (default): JWT does not affect allow/deny. A present remote JWT is verified so a valid token can skip the DSH launch-token cookie.
 - `optional`: no JWT continues; a present JWT MUST be valid.
-- `required`: a valid JWT is mandatory, including `/api/events.mux` and `/api/events.host` upgrades.
+- `required`: a valid JWT is mandatory, including `/api/remote.mux` upgrades.
 
 #### Scenario: Ordinary off without JWT
 - **GIVEN** `ordinary=off` and a remote trusted-host request with no JWT
@@ -73,7 +88,8 @@ Ordinary (non-privileged) remote APIs SHALL follow `auth.ordinary` after Host/Or
 - **GIVEN** `ordinary=off` and a remote trusted-host request with a JWT
 - **WHEN** a non-privileged RPC is called
 - **THEN** the decision is allow according to DSH original policy
-- **AND** the plugin MUST NOT cryptographically verify that JWT
+- **AND** a valid JWT skips the DSH launch-token cookie
+- **AND** an invalid JWT MUST NOT deny the ordinary API
 
 #### Scenario: Ordinary optional with invalid JWT
 - **GIVEN** `ordinary=optional` and a remote request with an invalid JWT
@@ -119,5 +135,5 @@ When the plugin can set HTTP status, missing authentication on remote privileged
 
 #### Scenario: Invalid token on events upgrade
 - **GIVEN** `ordinary=required` and an expired JWT
-- **WHEN** `/api/events.mux` is upgraded
+- **WHEN** `/api/remote.mux` is upgraded
 - **THEN** the handshake is rejected with HTTP 403

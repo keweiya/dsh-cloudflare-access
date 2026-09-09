@@ -1,6 +1,10 @@
 import type { OrdinaryMode } from '../config.ts';
 import type { JwtFailureReason, JwtVerification } from './types.ts';
-/** Remote methods this plugin may authorize with a valid JWT. Native host methods stay DSH-pinned. */
+/**
+ * Remote methods this plugin may authorize with a valid JWT.
+ * Names match DSH 0.1.5-alpha.1 Typert Remote endpoints (`namespace/method`).
+ * Native directory-picker / host.openPath stay off this list.
+ */
 export declare const PRIVILEGED_METHODS: Set<string>;
 export type AuthClass = 'loopback' | 'privileged' | 'ordinary';
 export interface AuthDecision {

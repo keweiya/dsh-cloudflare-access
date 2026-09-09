@@ -8,7 +8,7 @@
 
 不提供登录页、密码库、MFA、会话表或 Cloudflare API 客户端。
 
-Live 验证目标是 DeepSeek Harness **`0.1.1-rc.2`**。在[兼容性矩阵](#兼容性)更新之前，不要默认更新的 DSH 版本可用。
+插件 **`2.0.x`** 对准 DeepSeek Harness **`0.1.5-alpha.1`**。插件 **`1.0.x`** 是 DSH `0.1.2` 之前那条线（live 验证于 `0.1.1-rc.2`）。在[兼容性矩阵](#兼容性)更新之前，不要默认其他 DSH 版本可用。
 
 ## 架构
 
@@ -44,7 +44,7 @@ export DSH_CF_ACCESS_TEAM_DOMAIN=https://example.cloudflareaccess.com
 export DSH_CF_ACCESS_AUDIENCES=your-access-application-aud
 ```
 
-5. 经 Access 打开远程 UI，硬刷新一次，再打开 Settings。
+5. 经 Access 打开站点并硬刷新一次，再打开 Settings。Origin 上有效的 `Cf-Access-Jwt-Assertion` 会代替远程 Host 上的 DSH launch-token Cookie。loopback 仍须使用 `dsh web` 打印的 `?token=` URL。
 
 用 `dsh --profile web --dump-config` 确认 bundle：应有一层名为 `dsh-cloudflare-access`，以及插件行 `id: cloudflare-access`。
 
@@ -55,13 +55,13 @@ export DSH_CF_ACCESS_AUDIENCES=your-access-application-aud
 1. DSH 的 Host / Origin / `sec-fetch-site` 检查（`--trusted-host` 仍是必须的）。
 2. 有效的 Cloudflare Access JWT（签名、`iss`、`aud`、过期时间；允许约 30 秒时钟偏差）。
 
-有效 JWT 永远不能授权任意 Host 或 Origin。Loopback（`localhost` / `127.0.0.1` / `::1`）不要求 JWT，因此 `SSH Tunnel → localhost → DSH` 仍然可用。v1.0 中远程 privileged API 始终要求 JWT。
+有效 JWT 永远不能授权任意 Host 或 Origin。Loopback（`localhost` / `127.0.0.1` / `::1`）不要求 JWT，因此 `SSH Tunnel → localhost → DSH` 仍然可用。v2.0 中远程 privileged API 始终要求 JWT。
 
 Origin 应只对 Cloudflare（或等价入口）可达。安装本插件不是把 DSH 挂到公网的理由。详见 [SECURITY.md](./SECURITY.md)。
 
 ![Remote privileged request path](./docs/assets/archify/privileged-request.svg)
 
-先做 Host/Origin。有效 JWT 不得把 Host 改写为 loopback。privileged 成功转发到 `apiProxy`；缺失或无效 JWT 返回 401/403，且不进入 privileged 业务实现。Loopback 不读 JWT。
+先做 Host/Origin。有效 JWT 不得把 Host 改写为 loopback。privileged 成功交给原 `/api` handler（DSH Remote）；远程信任主机上有效 Access JWT 同时跳过 DSH launch-token Cookie。缺失或无效 JWT 返回 401/403，且不进入 privileged 业务实现。Loopback 不读 JWT，仍走官方 token/Cookie。
 
 转发 `Host`、`Origin` 和 `Cf-Access-Jwt-Assertion`。不要剥掉 assertion 头。不要信任 `CF_Authorization` Cookie。
 
@@ -89,7 +89,7 @@ Git 树已包含预构建的 `lib/index.js` 和 `lib/client.js`。`github:` 安�
 dsh plugin --profile web remove dsh-cloudflare-access
 ```
 
-unload 后，DSH 恢复官方远程 privileged loopback 限制。若运行中的进程仍是旧 fiber，再重启一次。
+unload 后，本插件的 JWT 包装消失。若运行中的进程仍是旧 fiber，再重启一次。
 
 ## 配置
 
@@ -145,7 +145,7 @@ auth:
 
 ## 普通 API 模式
 
-`auth.ordinary` 只作用于**远程非特权** API，包括 `/api/events.mux` 和 `/api/events.host`。Loopback 忽略它。Host/Origin 始终先执行。
+`auth.ordinary` 只作用于**远程非特权** API，包括 `/api/remote.mux`。Loopback 忽略它。Host/Origin 始终先执行。
 
 | 模式 | 无 JWT | 有效 JWT | 无效 JWT |
 | --- | --- | --- | --- |
@@ -160,21 +160,22 @@ auth:
 | 现象 | 检查 |
 | --- | --- |
 | 远程 Settings 仍不可用 | Access 必须在站点前面；硬刷新，使 Client 模块在 Settings 之前加载；确认 `Cf-Access-Jwt-Assertion` 到达 Origin。 |
-| Settings UI 从不调用 `settings.describe` | 本包设置了 `dsh.client.immediately: true`。若旧 tarball 漏了该项，重新安装。 |
-| `settings.*` 返回 401 | 缺 header。查反向代理转发，不要查 Cookie。 |
-| `settings.*` 返回 403 | `iss`/`aud`/签名/过期无效、插件未配置、Host/Origin 不匹配，或 Origin 时钟偏差超过约 30 秒。 |
-| `ordinary=required` 时事件 WebSocket 失败 | `/api/events.mux` 和 `/api/events.host` 走普通 API 策略。缺 JWT → 401；无效 JWT → 403。 |
+| Settings UI 从不调用 `settings/describe` | 本包设置了 `dsh.client.immediately: true`。若旧 tarball 漏了该项，重新安装。 |
+| `settings/*` 返回 401 | Access header 缺失或未被转发。查反向代理是否转发 `Cf-Access-Jwt-Assertion`。loopback 仍须打开 `dsh web` 打印的 `?token=` URL。 |
+| `settings/*` 返回 403 | `iss`/`aud`/签名/过期无效、插件未配置、Host/Origin 不匹配，或 Origin 时钟偏差超过约 30 秒。 |
+| `ordinary=required` 时事件 WebSocket 失败 | `/api/remote.mux` 走普通 API 策略。缺 JWT → 401；无效 JWT → 403。 |
 | Loopback Settings 坏了 | 卸载插件；loopback 不得要求 JWT。若仍要求，请报 bug。 |
 | JWKS / 密钥轮换失败 | Origin 必须能访问 `https://<team>/cdn-cgi/access/certs`。Cloudflare 轮换密钥后无需改配置。 |
 | 日志 | 只记录类别（`expired`、`invalid_signature`、`issuer_mismatch`、`audience_mismatch`、`missing_token`、`jwks_unavailable`、`unconfigured`）。从不记录 token。 |
 
-v1.0 不授权 `host.pickDirectory` 或 `host.openPath`。部分 native-host UI 仍可能出现；对应 RPC 会被拒绝。
+本插件不授权 `host.pickDirectory` 或 `host.openPath`。部分 native-host UI 仍可能出现。
 
 ## 兼容性
 
 | 插件 | DSH | 状态 |
 | --- | --- | --- |
-| 1.0.x | 0.1.1-rc.2 | Live-tested（Web profile，远程 Settings / Credentials） |
+| 1.0.x | 0.1.1-rc.2（0.1.2 之前） | Live 验证（Web profile，远程 Settings / Credentials）。走 `apiProxy` + privileged pin。与 DSH 0.1.2+ 不兼容。 |
+| 2.0.x | 0.1.5-alpha.1 | 已在 Cloudflare Access 后的 Web profile 上 live 验证（远程 Settings 不需要 DSH `?token=`）。单元/集成测试。CI 不启动 DSH 进程。 |
 
 在本矩阵更新之前，不要默认更新的 DSH 版本可用。
 

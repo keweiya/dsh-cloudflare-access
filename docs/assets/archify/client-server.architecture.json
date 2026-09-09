@@ -24,8 +24,8 @@
   "components": [
     { "id": "boot", "type": "frontend", "label": "Web boot", "sublabel": "immediately: true", "pos": [80, 120], "size": [160, 64] },
     { "id": "wrap", "type": "frontend", "label": "Wrap isLoopback", "sublabel": "capability on", "pos": [80, 270], "size": [160, 64] },
-    { "id": "ui", "type": "frontend", "label": "ui-settings", "sublabel": "settings.describe", "pos": [80, 420], "size": [160, 64] },
-    { "id": "api", "type": "backend", "label": "/api", "sublabel": "settings.describe", "pos": [560, 270], "size": [150, 64] },
+    { "id": "ui", "type": "frontend", "label": "ui-settings", "sublabel": "settings/describe", "pos": [80, 420], "size": [160, 64] },
+    { "id": "api", "type": "backend", "label": "/api", "sublabel": "settings/describe", "pos": [560, 270], "size": [150, 64] },
     { "id": "decide", "type": "security", "label": "Server decision", "sublabel": "JWT + Host/Origin", "pos": [840, 270], "size": [170, 64] }
   ],
   "boundaries": [

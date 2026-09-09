@@ -35,11 +35,11 @@ PRINCIPLE-6: DSH 版本相关接入集中在 `compat/`，不得与 JWT 核心耦
 PRINCIPLE-7: 插件效果必须可逆。unload 后不得留下包装、路由替换或全局 patch。
 
 ## 关键概念
-- **Privileged API**：DSH 硬编码为 loopback-only 的配置面方法，见 `docs/protocols.md`。
-- **Ordinary API**：其余 `/api` 方法以及事件 WebSocket；是否要求 JWT 由 `auth.ordinary` 决定。
+- **Privileged API**：本插件 JWT 放行的配置面 Remote，见 `docs/protocols.md`。
+- **Ordinary API**：其余 `/api` 方法以及 `/api/remote.mux`；是否要求 JWT 由 `auth.ordinary` 决定。
 - **Team Domain**：Cloudflare Access 团队域名，同时作为 JWT issuer 与 JWKS 基址。
 - **Capability enablement**：Client 允许 UI 发起 Host settings RPC；成功与否由 Server 决定。
-- **compat 适配**：针对 DSH 无公开 auth hook 的可逆包装；live target 为 `0.1.1-rc.2`。
+- **compat 适配**：针对 DSH 无公开 auth hook 的可逆包装；target 为 `0.1.5-alpha.1`。
 
 ## 术语表
 - **DSH**：DeepSeek Harness。

@@ -23,23 +23,24 @@ RULE-AUTH-HOST-ORIGIN: 任何远程放行之前必须通过 DSH 原有 Host/Orig
 
 RULE-AUTH-PRIVILEGED-METHODS: 远程 privileged 方法固定为：
 
-- `settings.describe`
-- `settings.openDocument`
-- `settings.update`
-- `settings.replace`
-- `settings.mutate`
-- `credentials.describe`
-- `credentials.set`
-- `credentials.unset`
-- `agentPreset.read`
-- `agentPreset.copy`
-- `agentPreset.openDocument`
-- `agentPreset.remove`
-- `llm.discoverModels`
+- `settings/describe`
+- `settings/openSettingsDocument`
+- `settings/update`
+- `settings/replace`
+- `settings/mutate`
+- `settings/canOpenAgentPresetDirectory`
+- `settings/openAgentPresetDirectory`
+- `credentials/describe`
+- `credentials/set`
+- `credentials/unset`
+- `agentPresets/read`
+- `agentPresets/copy`
+- `agentPresets/deletePreset`
+- `llm/discoverModels`
 
-v0.1 不得把 `host.pickDirectory`、`host.openPath`、`agentPreset.list`、`agentPreset.select` 放入该放行集合。
+不得把 `host.pickDirectory`、`host.openPath`、`agentPresets/list`、`agentPresets/select` 放入该放行集合。
 
-RULE-AUTH-PRIVILEGED-REMOTE: 远程 + privileged 必须提供有效 JWT。v0.1 不得提供关闭该要求的配置项。
+RULE-AUTH-PRIVILEGED-REMOTE: 远程 + privileged 必须提供有效 JWT。不得提供关闭该要求的配置项。
 
 RULE-AUTH-FAIL-CLOSED: 远程 privileged 在以下情况必须拒绝：JWT 缺失、无效、过期、iss 不匹配、aud 不匹配、JWKS 不可用、`teamDomain` 或 `audiences` 未配置。禁止因 Cloudflare 网络异常而放行。
 
@@ -49,13 +50,13 @@ RULE-AUTH-ORDINARY-OFF: `auth.ordinary=off` 时，JWT 不参与普通 API 判断
 
 RULE-AUTH-ORDINARY-OPTIONAL: `auth.ordinary=optional` 时，无 JWT 则继续 DSH 原规则；有 JWT 则必须有效，无效拒绝。
 
-RULE-AUTH-ORDINARY-REQUIRED: `auth.ordinary=required` 时，远程普通 API（含 `/api/events.mux` 与 `/api/events.host` upgrade）必须携带有效 JWT。
+RULE-AUTH-ORDINARY-REQUIRED: `auth.ordinary=required` 时，远程普通 API（含 `/api/remote.mux` upgrade）必须携带有效 JWT。
 
 RULE-AUTH-UNCONFIGURED: `teamDomain` 或 `audiences` 为空时插件可以启动；loopback 不受影响；远程 privileged 拒绝；日志明确提示尚未配置。
 
 ## JWT 规则
 
-RULE-JWT-LIBRARY: 必须使用成熟 JWT/JWKS 库（v0.1 使用 `jose`）。禁止自实现 RSA、JWK 或 JWT parser。
+RULE-JWT-LIBRARY: 必须使用成熟 JWT/JWKS 库（当前使用 `jose`）。禁止自实现 RSA、JWK 或 JWT parser。
 
 RULE-JWT-CHECKS: 验证必须包括 signature、alg、iss、aud、exp；nbf 存在时必须验证。拒绝 unsigned JWT 与 algorithm downgrade。`exp` / `nbf` 允许 30 秒时钟偏差，超出仍拒绝。
 
@@ -65,7 +66,7 @@ RULE-JWT-AUD: 配置的 `audiences` 命中 token aud 中任一值即通过；tok
 
 RULE-JWT-JWKS: 必须使用 Remote JWK Set。禁止每个请求都拉取 JWKS，也禁止进程启动下载一次后永不更新。
 
-RULE-JWT-NO-RESULT-CACHE: v0.1 不得缓存单个 JWT 的验证结果。只缓存 JWKS。
+RULE-JWT-NO-RESULT-CACHE: 不得缓存单个 JWT 的验证结果。只缓存 JWKS。
 
 ## 配置规则
 
@@ -109,14 +110,14 @@ RULE-PACKAGING-BUNDLE: `package.json` 必须声明 `dsh.bundle.patch` 指向 `co
 
 RULE-PACKAGING-CLIENT: 必须提供构建完成的 `exports["./client"]` 与 `dsh.client.platform = web`。`dsh.client.immediately` 必须为 `true`，`inject` 必须包含 `@deepseek-ai/dsh-client-connection`。安装后无需用户编译 DSH Web。
 
-RULE-PACKAGING-PEER: `peerDependencies` 只声明实际验证过的 DSH API 范围；v0.1 对准 `0.1.1-rc.2`，禁止提前写宽泛范围。
+RULE-PACKAGING-PEER: `peerDependencies` 只声明实际验证过的 DSH API 范围；当前对准 `0.1.5-alpha.1`，禁止提前写宽泛范围。
 
 RULE-PACKAGING-ARTIFACTS: Git 树与 npm tarball 必须包含 `lib/index.js`、`lib/client.js`、`README.md`、`LICENSE`。`lib/client.js` 必须是 `window.__ModuleLoader__.load` factory。`keywords` 必须包含 `dsh-plugin`。作为依赖安装时，若 `lib/` 已存在，`prepare` 不得要求本机安装 TypeScript 或 esbuild。
 
 ## 无效模式
 - Cloudflare 故障时 fail open。
 - 用 Cookie 代替 assertion header。
-- 把 Host 改成 `127.0.0.1` 以绕过 privileged pin。
+- 把 Host 改成 `127.0.0.1` 以绕过 DSH 信任栅栏。
 - 在 Client 里“验证通过才显示 Settings”。
 - 替换整个 `connection` 插件行作为默认安装方式。
 - 使用 `connection.rpc.intercept` 做认证。
@@ -125,7 +126,7 @@ RULE-PACKAGING-ARTIFACTS: Git 树与 npm tarball 必须包含 `lib/index.js`、`
 ## 示例
 
 ### 正确模式
-远程 privileged：Host/Origin 通过 → JWT 有效 → 转发 apiProxy。
+远程 privileged：Host/Origin 通过 → JWT 有效 → 原 `/api` handler。
 
 ### 错误模式
 远程 privileged：JWT 有效 → 跳过 Host 检查 → 放行。

@@ -28,7 +28,7 @@ dsh-cloudflare-access
    └─ Client: capability enablement
 ```
 
-DSH `0.1.1-rc.2`（与调研用的 `0.1.0-rc.5` 相同扩展点）没有公开 authorization hook。架构选择是：
+DSH `0.1.5-alpha.1` 没有公开 authorization hook。架构选择是：
 
 ```text
 Hook A → Server authorization
@@ -36,7 +36,7 @@ Hook B → Client capability
 Bundle C → 自动安装
 ```
 
-不修改 DSH dist/source。版本相关包装只存在于 `compat/`。决策见 `docs/decisions/ADR-0002-dsh-hook-strategy.md`。
+不修改 DSH dist/source。版本相关包装只存在于 `compat/`。决策见 `docs/decisions/ADR-0005-dsh-015-hook-strategy.md`。
 
 ## 系统组件
 
@@ -59,10 +59,10 @@ Bundle C → 自动安装
 - 下游：compat 层的 `/api` 包装。
 
 ### DshCompatServer
-- 职责：在 `webServer.register` 上可逆包装 `/api` 与相关 upgrade，把 policy 插入 DSH 现有 handler 之外或之前；对远程 privileged + 有效 JWT 在通过 Host/Origin 后绕过 DSH 内部 loopback pin，转发到 `apiProxy`。
+- 职责：在 `webServer.register` 上可逆包装 `/api`、`/api/remote.mux` upgrade 与 index fallback，把 JWT policy 插在 DSH 现有 handler 之前；远程 + 有效 JWT 在 Host/Origin 通过后交给原 handler，并跳过 DSH launch-token Cookie。不伪造 loopback Host。
 - 非职责：JWT 解析、普通业务 RPC。
-- 上游：`webServer`、`apiProxy`、AuthorizationPolicy。
-- 下游：DSH 原 `/api` handler 或 `apiProxy`。
+- 上游：`webServer`、AuthorizationPolicy。
+- 下游：DSH 原 `/api` handler。
 
 ### DshCompatClient
 - 职责：可逆包装 `connection.isLoopback`，让远程 Web 使用 Host settings persistence 并尝试 privileged RPC。
@@ -79,13 +79,13 @@ RULE-ARCH-1: JWT 核心（config / jwt / policy）不得 import DSH 内部未公
 
 RULE-ARCH-2: Server 包装必须发生在 `client-connection` 注册 `/api` 之前。实现方式是插件 `inject = ['webServer']`，不注入 `webRuntime`，从而早于 connection 行激活。
 
-RULE-ARCH-3: 远程 privileged 放行路径必须先复用或等价执行 DSH Host/Origin 检查，再验证 JWT，最后才转发 `apiProxy`。禁止把 Host 改写成 loopback 来骗过内部 pin。
+RULE-ARCH-3: 远程 privileged 放行路径必须先复用或等价执行 DSH Host/Origin 检查，再验证 JWT，最后交给原 `/api` handler。禁止把 Host 改写成 loopback。
 
-RULE-ARCH-4: 插件 unload 必须恢复 `webServer.register` / `registerUpgrade` 与 `connection.isLoopback` 的原行为，并撤销本插件注册的路由包装。
+RULE-ARCH-4: 插件 unload 必须恢复 `webServer.register` / `registerUpgrade` / `registerFallback`、`connection.requestRejection` / `authorizeIndex` 与 `connection.isLoopback` 的原行为。
 
 RULE-ARCH-5: 不得占用 `connection.rpc.intercept`。该槽位已被 Typert Gateway 使用。
 
-RULE-ARCH-6: Client 模块必须 `dsh.client.immediately: true` 且 inject `@deepseek-ai/dsh-client-connection`，否则 Web boot 会在 ui-settings 快照 memory persistence 之后才加载本模块。
+RULE-ARCH-6: Client 模块必须 `dsh.client.immediately: true` 且 inject `@deepseek-ai/dsh-client-connection`，否则 Web boot 会在 ui-settings 把 `remote.$host.isLoopback=false` 快照进 memory persistence 之后才加载本模块。
 
 ## 运行时流程
 
@@ -94,22 +94,22 @@ RULE-ARCH-6: Client 模块必须 `dsh.client.immediately: true` 且 inject `@dee
 2. 请求到达 DSH `webServer` 的 `/api` 前缀。
 3. 本插件包装 handler 先做 Host/Origin（不得跳过）。
 4. 识别 RPC 方法；若属于 privileged 且非 loopback，则验证 JWT。
-5. JWT 有效则转发 `apiProxy`，不再走 DSH 内部 `PRIVILEGED_METHODS + isTrustedApiRequest(request, [])`。
+5. JWT 有效则交给原 `/api` handler（Typert Remote），并跳过 DSH launch-token Cookie。
 6. JWT 缺失或无效则拒绝，不调用 privileged 业务实现。
 
 ### 远程 ordinary HTTP
 1. Host/Origin 仍由 DSH 原 handler 执行（包装层先按 ordinary 策略处理 JWT）。
-2. `off`：不看 JWT，不验签，交给原 handler。
+2. `off`：无 JWT 不验签，交给原 handler。有 JWT 则验签：有效则跳过 DSH Cookie；无效不拒绝普通 API。
 3. `optional`：无 JWT 不验签，交给原 handler；有 JWT 则必须有效。
 4. `required`：必须有效 JWT，再交给原 handler。
 
 ### Loopback
 1. 包装层识别 loopback 后直接交给 DSH 原 handler。
-2. 不读取、不要求 JWT。
+2. 不读取、不要求 JWT，也不跳过 DSH launch-token Cookie。
 
 ### Client
 1. Client Module 在 `connection` 可用后把 `isLoopback` 包装为 capability 开启。
-2. UI 发起 `settings.describe` 等 RPC。
+2. UI 发起 `settings/describe` 等 Remote。
 3. Server 按上述流程裁决。
 4. unload 时恢复 `isLoopback`。
 

@@ -10,13 +10,13 @@ accepted
 
 ### API-JWT-HEADER
 - 方法：任意到达 DSH Origin 的 HTTP/WebSocket 升级请求
-- 路径或事件名：DSH `/api` 前缀，包括 `/api/<rpc-method>`、`/api/events.mux`、`/api/events.host`
+- 路径或事件名：DSH `/api` 前缀，包括 `/api/<namespace>/<method>`、`/api/remote.mux`
 - 输入：Header `Cf-Access-Jwt-Assertion`
 - 输出：无新响应体协议；沿用 DSH HTTP 或 RPC 错误
 
 ### API-PRIVILEGED-RPC
 - 方法：DSH unary HTTP RPC
-- 路径：`/api/<method>`
+- 路径：`/api/<namespace>/<method>`
 - 输入：DSH 原 payload
 - 输出：DSH 原结果；本插件只在授权失败时拦截
 
@@ -53,37 +53,38 @@ auth:
 - `exp`: 必须未过期，允许 30 秒时钟偏差。
 - `nbf`: 若存在则必须已生效，同样允许 30 秒时钟偏差。
 
-不把 `email` / `identity_nonce` 映射为 DSH 用户。v0.1 无用户模型。
+不把 `email` / `identity_nonce` 映射为 DSH 用户。本插件无用户模型。
 
 ## 特权方法清单
 
-权威来源：DSH `@deepseek-ai/dsh-client-connection` 的 `PRIVILEGED_METHODS`。本插件 v0.1 **放行**其中配置面子集，**不放行** native host 方法。
+权威来源：DSH `0.1.5-alpha.1` Typert Remote map（`dsh-api-settings-controller`、`dsh-agent-presets`、`dsh-llm`）。本插件 **放行**配置面子集，**不把** native directory-picker / `host.openPath` 列入放行集合。
 
-| method | DSH pin | 本插件远程 + JWT |
-| --- | --- | --- |
-| `settings.describe` | 是 | 放行 |
-| `settings.openDocument` | 是 | 放行 |
-| `settings.update` | 是 | 放行 |
-| `settings.replace` | 是 | 放行 |
-| `settings.mutate` | 是 | 放行 |
-| `credentials.describe` | 是 | 放行 |
-| `credentials.set` | 是 | 放行 |
-| `credentials.unset` | 是 | 放行 |
-| `agentPreset.read` | 是 | 放行 |
-| `agentPreset.copy` | 是 | 放行 |
-| `agentPreset.openDocument` | 是 | 放行 |
-| `agentPreset.remove` | 是 | 放行 |
-| `llm.discoverModels` | 是 | 放行 |
-| `host.pickDirectory` | 是 | 不放行 |
-| `host.openPath` | 是 | 不放行 |
-| `agentPreset.list` | 否 | 按 ordinary |
-| `agentPreset.select` | 否 | 按 ordinary |
-| `llm.providers` | 否 | 按 ordinary |
-| `llm.models` | 否 | 按 ordinary |
+| method | 本插件远程 + JWT |
+| --- | --- |
+| `settings/describe` | 放行 |
+| `settings/openSettingsDocument` | 放行 |
+| `settings/update` | 放行 |
+| `settings/replace` | 放行 |
+| `settings/mutate` | 放行 |
+| `settings/canOpenAgentPresetDirectory` | 放行 |
+| `settings/openAgentPresetDirectory` | 放行 |
+| `credentials/describe` | 放行 |
+| `credentials/set` | 放行 |
+| `credentials/unset` | 放行 |
+| `agentPresets/read` | 放行 |
+| `agentPresets/copy` | 放行 |
+| `agentPresets/deletePreset` | 放行 |
+| `llm/discoverModels` | 放行 |
+| `host.pickDirectory` / `host.openPath` | 不放行 |
+| `agentPresets/list` | 按 ordinary |
+| `agentPresets/select` | 按 ordinary |
+| `llm/listProviders` | 按 ordinary |
+| `llm/listConfigurableProviders` | 按 ordinary |
+| `remote.mux` | 按 ordinary |
 
 ## 错误处理
 
-若包装层能写 HTTP status（含 `/api/events.*` WebSocket 握手），则：
+若包装层能写 HTTP status（含 `/api/remote.mux` WebSocket 握手），则：
 
 - `missing_token` → `401 Unauthorized`
 - `unconfigured` → `403 Forbidden`
@@ -91,7 +92,7 @@ auth:
 
 响应体保持简单文本或 DSH 现有协议，不返回 token。若未来 DSH RPC error model 不允许改 HTTP status，则保持 DSH 协议形式，但错误分类字段必须可区分上述类别。
 
-DSH 官方 privileged 拒绝当前是 `403` + body `forbidden`。unload 后应回到该行为。
+DSH 在 Host/Origin 失败时仍可能返回 `403`。loopback 或缺有效 Access JWT 的远程请求仍可能因缺 DSH Cookie 返回 `401`。unload 后 JWT 包装消失，官方行为恢复。
 
 ## 示例
 

@@ -1,6 +1,6 @@
 # Capability: plugin-packaging
 
-本包必须是可独立安装的 DSH Profile Bundle：`dsh.bundle` 插入 Web profile 行，`dsh.client` 提供浏览器 factory，Env 锁定信任根。Git 与 npm 发行都携带预构建 `lib/`，unload 后恢复官方 remote privileged pin。
+本包必须是可独立安装的 DSH Profile Bundle：`dsh.bundle` 插入 Web profile 行，`dsh.client` 提供浏览器 factory，Env 锁定信任根。Git 与 npm 发行都携带预构建 `lib/`，unload 后恢复官方远程限制。
 
 ## Requirements
 
@@ -61,7 +61,7 @@ Runtime configuration MUST resolve Environment Variables over Cordis/Bundle conf
 ### Requirement: Reversible server effects
 Unloading the server plugin MUST restore official DSH remote privileged restrictions. The plugin MUST NOT leave a global monkey patch after unload.
 
-#### Scenario: Unload restores privileged pin
+#### Scenario: Unload restores official remote restrictions
 - **GIVEN** the server plugin was authorizing remote `settings.*` with a valid JWT
 - **WHEN** the plugin unloads
 - **THEN** the same remote `settings.*` request is rejected by official DSH behavior

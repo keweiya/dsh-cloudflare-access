@@ -12,21 +12,20 @@
 6. [rules.md](./rules.md) — 不可违反的规则
 7. 需要实现细节时再读 [services/](./services/) 与 [protocols.md](./protocols.md)
 
-## 已实现（v1.0.0）
+## 已实现（v2.0.0）
 
 - Origin 验证 `Cf-Access-Jwt-Assertion`，Remote JWKS，fail closed。
-- 远程 privileged 授权（Settings / Credentials / 特权 Agent Preset / `llm.discoverModels`）。
+- 远程 privileged 授权（Settings / Credentials / 特权 Agent Preset / `llm/discoverModels`）。
 - 普通 API `off | optional | required`。
 - Web Client capability enablement，且 `dsh.client.immediately: true`。
 - 标准 `dsh.bundle` + `dsh.client` 安装；unload 可逆。
-- 在 DSH `0.1.1-rc.2` Web profile 上 live 验证远程 Settings / Credentials。
-- npm 公共包 `dsh-cloudflare-access@1.0.0`。
+- 对照 DSH `0.1.5-alpha.1`：Typert Remote 路径、`/api/remote.mux`，JWT 叠在原 `/api` handler 之前。
+- 远程有效 Access JWT 代替 DSH launch-token Cookie；已在 Web profile 上 live 验证远程 Settings。
 
 ## 尚未交付
 
 - 提交 dsh.pub / 插件市场 listing。
-- 跟随尚未实测的更新 DSH 版本。
-- 远程授权 `host.pickDirectory` / `host.openPath`，或隐藏因此出现的 native host UI。
+- 远程授权 native directory-picker / `host.openPath`，或隐藏因此出现的 native host UI。
 
 ## 规范基线
 

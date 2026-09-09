@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 2.0.0
+
+- Overlay Cloudflare JWT on the original `/api`, `/api/remote.mux`, and index fallback. A valid Access JWT on a remote trusted host skips DSH's launch-token cookie, including Access login callbacks with `sec-fetch-site: cross-site`. Loopback still requires the official token.
+- Map privileged RPCs to Typert Remote endpoints (`settings/describe`, `agentPresets/deletePreset`, and the rest of the 0.1.5 configuration surface).
+- Treat `/api/remote.mux` as the ordinary events WebSocket.
+- Peer `@deepseek-ai/dsh-client-connection` and `@deepseek-ai/dsh-host-webserver` `0.1.5-alpha.1`, plus `@deepseek-ai/cordis` `4.0.2`.
+
 ## 1.0.0
 
 - Normalize `teamDomain` to an http(s) origin so a host without `https://` still produces a valid issuer and JWKS URL.

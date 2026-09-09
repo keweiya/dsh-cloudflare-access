@@ -5,9 +5,10 @@
  *
  * `dsh.client.immediately` must be true: the Web boot prefetches those
  * bundles before `loader.create`. Without it this module arrives after
- * ui-settings has already snapshotted isLoopback=false into memory mode
- * and never issues settings.describe. inject connection so apply() runs
- * after the handle exists and before ui-settings (which also waits for remote).
+ * ui-settings has already snapshotted remote.$host.isLoopback=false
+ * (copied from connection.isLoopback) into memory mode and never issues
+ * settings/describe. inject connection so apply() runs after the handle
+ * exists and before ui-settings (which also waits for remote).
  */
 export interface ConnectionHandleLike {
     isLoopback: boolean;

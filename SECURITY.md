@@ -26,6 +26,7 @@ dsh-cloudflare-access
 - Keep DSH `--trusted-host` and Host/Origin checks enabled.
 - Do not expose the DSH Origin to the public internet merely because this plugin is installed.
 - A valid Access JWT never authorizes an arbitrary Host or Origin.
+- On a remote trusted host, a valid Access JWT replaces DSH's launch-token cookie. Loopback still requires the URL printed by `dsh web`.
 
 ## Token handling
 
