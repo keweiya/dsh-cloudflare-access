@@ -173,7 +173,7 @@ Privileged remote APIs always require a valid JWT, regardless of this setting.
 | 401 on `settings/*` | Access header missing or not forwarded. Inspect reverse-proxy forwarding of `Cf-Access-Jwt-Assertion`. Loopback still needs the `?token=` URL printed by `dsh web`. |
 | 403 on `settings/*` | Invalid `iss`/`aud`/signature/expiry, unconfigured plugin, Host/Origin mismatch, or Origin clock more than ~30s off. |
 | Events WebSocket fails when `ordinary=required` | `/api/remote.mux` follows the ordinary policy. Missing JWT → 401; invalid JWT → 403. |
-| 401 from another plugin's routes behind Access (for example `/dsh-market/*`) | Fixed in 2.1.0: the Access-JWT cookie substitution used to cover only `/api`. Upgrade this package; no config change is needed. |
+| 401 from another plugin's routes behind Access (for example `/dsh-market/*`) | Fixed in 2.1.1: the Access-JWT cookie substitution used to cover only `/api` (2.1.0), and then only routes registered *after* this plugin activated (2.1.1 adopts routes that were already registered). Upgrade this package; no config change is needed. |
 | Loopback Settings broken | Unload the plugin; loopback must not require JWT. File a bug if it does. |
 | JWKS / key rotation failures | Origin must reach `https://<team>/cdn-cgi/access/certs`. No config change after Cloudflare rotates keys. |
 | Logs | Categories only (`expired`, `invalid_signature`, `issuer_mismatch`, `audience_mismatch`, `missing_token`, `jwks_unavailable`, `unconfigured`). Tokens are never logged. |
@@ -186,7 +186,7 @@ This plugin does not authorize `host.pickDirectory` or `host.openPath`. Some nat
 | --- | --- | --- |
 | 1.0.x | 0.1.1-rc.2（0.1.2 之前） | Live-tested (Web profile, remote Settings / Credentials). `apiProxy` + privileged pin. Not compatible with DSH 0.1.2+. |
 | 2.0.x | 0.1.5-alpha.1 | Live-tested on a Web profile behind Cloudflare Access (remote Settings without DSH `?token=`). Unit/integration tests. CI does not start a DSH process. |
-| 2.1.x | 0.1.5-alpha.1, 0.2.0-rc.2 | `0.2.0-rc.2` measured against the installed DSH packages and live on a Web profile behind Cloudflare Access (valid JWT, forged JWT → 403, loopback → 401, `/api` deny scope unchanged); privileged endpoint names re-verified against `dsh-api-settings-controller`, `dsh-agent-preset-registry`, and `dsh-llm`. Unit/integration tests. CI does not start a DSH process. |
+| 2.1.x | 0.1.5-alpha.1, 0.2.0-rc.2 | `0.2.0-rc.2` measured against the installed DSH packages and live on a Web profile behind Cloudflare Access (valid JWT, forged JWT → 403, loopback → 401, `/api` deny scope unchanged; the ordering probe in `docs/references/dsh-source-research.md` §8.1, and the real `dshmarket@1.66.14` mount in both orders); privileged endpoint names re-verified against `dsh-api-settings-controller`, `dsh-agent-preset-registry`, and `dsh-llm`. Unit/integration tests. CI does not start a DSH process. |
 
 Do not assume newer DSH releases work until this matrix is updated.
 

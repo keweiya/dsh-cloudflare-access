@@ -115,4 +115,21 @@ live 探针（对 Access 后的运行实例，伪造 header）：
 | `Host: localhost:3080`，同路径 | 401 `unauthorized` |
 | `Host: 127.0.0.1:3080`，同路径 | 401 `unauthorized` |
 
-结论：CF 插件在 `0.2.0-rc.2` 上仍被正确加载，`webRuntime.trustedHosts` 能解析，Host/Origin 栅栏与 `dsh-trust.ts` 副本一致；`/api` 面工作正常，缺的只是第三方路由的豁免覆盖（本仓库 2.1.0 修复）。peer 版本改为范围 `^0.1.5-alpha.1 || ^0.2.0-rc.2` 后，`dsh plugin add` 的 peer 校验不再拒绝安装。
+结论：CF 插件在 `0.2.0-rc.2` 上仍被正确加载，`webRuntime.trustedHosts` 能解析，Host/Origin 栅栏与 `dsh-trust.ts` 副本一致；`/api` 面工作正常。peer 版本改为范围 `^0.1.5-alpha.1 || ^0.2.0-rc.2` 后，`dsh plugin add` 的 peer 校验不再拒绝安装。
+
+### 8.1 激活顺序实测（2.1.1 的依据）
+
+2.1.0（只包装注册方法）在这台实例上仍然 401。用**不依赖有效 JWT** 的时序探针定位：给一个 header 里带未知 `kid` 的 JWT，`jose` 的 `createRemoteJWKSet` 在冷却期外会重新抓一次 JWKS（本机实测 `https://keweiya.cloudflareaccess.com/cdn-cgi/access/certs` 约 0.53s 冷连接 / 0.036s 复用连接）。于是「这条路由有没有走验签」可以被观测：
+
+| 探针（`Host: dsh.0rz.li`，冷却期外） | 耗时 | 含义 |
+| --- | --- | --- |
+| `/api/settings/describe` + 未知-kid JWT | 0.557s | 走了验签（重取 JWKS） |
+| 紧接着同一请求（冷却期内） | 0.004s | — |
+| `/dsh-market/api/v1/capabilities` + 同一 JWT | 0.001s | **没走验签** |
+| `/dsh-market/api/v1/capabilities` 无 JWT | 0.001s | 基线 |
+
+`remoteHostTrusted` 已由 `/api` 的 403 排除（403 需要 `hostOriginTrusted=true`，两者共用 `isTrustedAuthority`）。所以市场路由确实没被包装。
+
+原因：`dshmarket@1.66.14` 在自己的 `apply` 里 `ctx.inject(['webServer','loader'], (hostCtx) => { … host.webServer.register(…) })`，服务可用即同步注册 48 条 `/dsh-market/*` 路由；本插件走 plugin 级 `inject = ['webServer']`，`apply` 由 Cordis 延后。用真实市场代码复现（`mountMarketRoutes` + `refuseUnadmitted`）：`compat-first` → 200，`compat-last` → 401（与线上一致）。2.1.1 的采纳（adopt）修好后两种顺序都是 200。
+
+路由表形状（`dsh-host-webserver` rc.2）：`this.exact` / `this.prefixes` / `this.upgrades` 是 `Map<path, route>`，`this.fallback` 是 handler；`match()` 与 upgrade 分支、fallback 分支都在请求时读 `route.handler`，所以在表里就地替换 handler 即可生效。

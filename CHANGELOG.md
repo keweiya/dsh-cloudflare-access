@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 2.1.1
+
+- Adopt the routes that were already registered when the plugin activates. Wrapping `webServer.register` alone only covers routes registered **after** it, and on `0.2.0-rc.2` a third-party plugin can mount first: dshmarket registers its 48 `/dsh-market/*` routes inside `ctx.inject(['webServer','loader'], …)`, which runs before this plugin's `apply` (deferred by `inject = ['webServer']`). 2.1.0 therefore left exactly the routes it meant to cover unmarked, and the market still answered 401 behind Access. Activation now also sweeps the webserver's `exact` / `prefixes` / `upgrades` tables and the fallback seat, replacing `route.handler` in place — dispatch reads that property, so ordering no longer matters. Adopted entries are restored on unload, and re-activation never stacks a second wrapper.
+- Verified against the real `dshmarket@1.66.14` code on `0.2.0-rc.2`: `mountMarketRoutes` + `refuseUnadmitted` answer 200 for a valid Access JWT and 401 without one in both mount orders (plugin first, plugin last). 2.1.0 failed the second order.
+
 ## 2.1.0
 
 - Cover **every** registered route and WebSocket upgrade with the Access-JWT cookie substitution, not just `/api`. `connection.requestRejection` is DSH's admission check for every route owner, so a third-party route that asks it (dshmarket ≥ 1.66.13 puts its 48 `/dsh-market/*` routes behind it, dsh-market#603) kept demanding DSH's launch-token cookie and answered 401 behind Access even with a valid JWT.

@@ -113,6 +113,7 @@ RULE-ARCH-6: Client 模块必须 `dsh.client.immediately: true` 且 inject `@dee
 3. handler 的 `requestRejection` 因此返回 `undefined`，不再索要 DSH launch-token Cookie。
 4. 无 JWT / 无效 JWT 时不标记，也不拒绝：路由按自己的裁决返回，行为与未安装本插件时一致。
 5. `ordinary` 模式不作用于这些路由——它们不属于 DSH 自己的面。
+6. 插件激活时还会**采纳**已经注册在 webserver 表里的路由（`exact` / `prefixes` / `upgrades` / `fallback`）：第三方插件可以在本插件的 `apply` 之前就挂载（dshmarket 用 `ctx.inject(['webServer','loader'], …)` 实测如此），只包装注册方法会漏掉它们。
 
 ### Client
 1. Client Module 在 `connection` 可用后把 `isLoopback` 包装为 capability 开启。

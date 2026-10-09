@@ -26,6 +26,19 @@
  *
  * 豁免只对**远程**且 JWT 有效时生效，且只增加放行、从不放宽 Host/Origin；
  * loopback 不读 JWT，仍走官方 token/Cookie。
+ *
+ * ## 激活顺序：必须「采纳」先注册的路由
+ *
+ * 只包装 `register` 是不够的，因为**包装器装上的时机可能晚于第三方挂载**：
+ * dshmarket 在自己的 `apply` 里用 `ctx.inject(['webServer','loader'], …)`，
+ * 服务一可用就同步注册 48 条路由；而本插件走 plugin 级 `inject = ['webServer']`，
+ * apply 由框架延后。实测（0.2.0-rc.2 + dshmarket 1.66.14）就是这样：市场路由
+ * 先落表，包装器后装上，于是市场路由永远不被标记，Access 后面继续 401。
+ *
+ * 所以激活时除了换掉三个注册方法，还要扫一遍 webserver 已注册的路由表
+ * （`exact` / `prefixes` / `upgrades` / `fallback`），把**已经注册**的路由就地
+ * 换成包装后的 handler。这样无论谁先谁后，覆盖范围都完整。
+ * 表结构缺失或形状不同时跳过，插件退回「只覆盖激活之后注册的路由」。
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
@@ -52,6 +65,16 @@ export interface WebServerLike {
   register(route: WebRoute): () => void
   registerUpgrade(route: WebUpgradeRoute): () => void
   registerFallback?(handler: WebRoute['handler']): () => void
+  /**
+   * DSH 0.1.5-alpha.1 … 0.2.0-rc.2 的 webserver 把路由放在实例的这几张表里，
+   * dispatch 时读 `route.handler`（`match()` / upgrade 分支 / `this.fallback`）。
+   * 本插件激活可能晚于第三方挂载（见文件头「激活顺序」），因此激活时要就地
+   * 采纳这些表里已经存在的路由。字段缺失或不是 Map/函数时跳过。
+   */
+  exact?: Map<string, WebRoute>
+  prefixes?: Map<string, WebRoute>
+  upgrades?: Map<string, WebUpgradeRoute>
+  fallback?: WebRoute['handler']
 }
 
 export interface ConnectionAuthLike {
@@ -176,9 +199,24 @@ function wrapBrowserSession(
   }, 'dsh-cloudflare-access: restore connection browser-session')
 }
 
+/** 标记本插件生成的 handler，采纳（adopt）时据此避免二次包装。 */
+const WRAPPED: unique symbol = Symbol('dsh-cloudflare-access:wrapped')
+
+type AnyHandler = (...args: never[]) => unknown
+
+function markWrapped<T extends AnyHandler>(handler: T): T {
+  Object.defineProperty(handler, WRAPPED, { value: true, enumerable: false })
+  return handler
+}
+
+function isWrapped(handler: unknown): boolean {
+  return typeof handler === 'function'
+    && (handler as { [WRAPPED]?: boolean })[WRAPPED] === true
+}
+
 /**
- * Wrap webServer.register / registerUpgrade / registerFallback.
- * Must run before connection apply. Restores originals on dispose.
+ * Wrap webServer.register / registerUpgrade / registerFallback, then adopt the
+ * routes registered before this plugin activated. Restores originals on dispose.
  */
 export function installServerCompat(ctx: CompatContext, deps: ServerCompatDeps): void {
   const originalRegister = ctx.webServer.register
@@ -191,73 +229,84 @@ export function installServerCompat(ctx: CompatContext, deps: ServerCompatDeps):
     if (skip) skipped.add(req)
   }
 
+  // Deny policy stays on the DSH Remote surface. Every other route is only
+  // marked, so its own owner decides admission (see the header note).
+  const wrapHttpHandler = (
+    inner: WebRoute['handler'],
+    policyRoute: boolean,
+  ): WebRoute['handler'] => markWrapped(async (req: IncomingMessage, res: ServerResponse) => {
+    const gate = await authorize(req, deps)
+    if (policyRoute && gate.action === 'deny') {
+      logDenied(logger, {
+        method: gate.method,
+        reason: gate.reason,
+        privileged: gate.privileged,
+      })
+      writeAuth(res, gate.status, gate.body)
+      return
+    }
+    markAndForward(req, marksBrowserSession(gate))
+    await inner(req, res)
+  })
+
+  // Same split as register(): only the DSH Remote mux upgrade is denied here.
+  const wrapUpgradeHandler = (
+    inner: WebUpgradeRoute['handler'],
+    policyRoute: boolean,
+  ): WebUpgradeRoute['handler'] => markWrapped(
+    async (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+      const gate = await authorize(req, deps)
+      if (policyRoute && gate.action === 'deny') {
+        logDenied(logger, {
+          method: gate.method,
+          reason: gate.reason,
+          privileged: gate.privileged,
+        })
+        rejectUpgrade(socket, gate.status)
+        return
+      }
+      markAndForward(req, marksBrowserSession(gate))
+      await inner(req, socket, head)
+    },
+  )
+
+  // The fallback serves DSH's own index and static assets, so it is a
+  // first-party surface like `/api`: `ordinary=required` still denies a client
+  // that cannot present an Access JWT. Third-party routes are deliberately
+  // excluded from that denial (see the header note).
+  const wrapFallbackHandler = (inner: WebRoute['handler']): WebRoute['handler'] =>
+    markWrapped(async (req: IncomingMessage, res: ServerResponse) => {
+      const gate = await authorize(req, deps)
+      if (gate.action === 'deny') {
+        logDenied(logger, {
+          method: gate.method,
+          reason: gate.reason,
+          privileged: gate.privileged,
+        })
+        writeAuth(res, gate.status, gate.body)
+        return
+      }
+      markAndForward(req, marksBrowserSession(gate))
+      await inner(req, res)
+    })
+
   ctx.webServer.register = (route: WebRoute): (() => void) => {
-    const inner = route.handler
-    // Deny policy stays on the DSH Remote surface. Every other route is only
-    // marked, so its own owner decides admission (see the header note).
-    const policyRoute = isApiPrefix(route)
     return originalRegister.call(ctx.webServer, {
       ...route,
-      handler: async (req, res) => {
-        const gate = await authorize(req, deps)
-        if (policyRoute && gate.action === 'deny') {
-          logDenied(logger, {
-            method: gate.method,
-            reason: gate.reason,
-            privileged: gate.privileged,
-          })
-          writeAuth(res, gate.status, gate.body)
-          return
-        }
-        markAndForward(req, marksBrowserSession(gate))
-        await inner(req, res)
-      },
+      handler: wrapHttpHandler(route.handler, isApiPrefix(route)),
     })
   }
 
   ctx.webServer.registerUpgrade = (route: WebUpgradeRoute): (() => void) => {
-    const inner = route.handler
-    // Same split as register(): only the DSH Remote mux upgrade is denied here.
-    const policyRoute = isRemoteMuxUpgrade(route)
     return originalRegisterUpgrade.call(ctx.webServer, {
       ...route,
-      handler: async (req, socket, head) => {
-        const gate = await authorize(req, deps)
-        if (policyRoute && gate.action === 'deny') {
-          logDenied(logger, {
-            method: gate.method,
-            reason: gate.reason,
-            privileged: gate.privileged,
-          })
-          rejectUpgrade(socket, gate.status)
-          return
-        }
-        markAndForward(req, marksBrowserSession(gate))
-        await inner(req, socket, head)
-      },
+      handler: wrapUpgradeHandler(route.handler, isRemoteMuxUpgrade(route)),
     })
   }
 
   if (originalRegisterFallback !== undefined) {
-    // The fallback serves DSH's own index and static assets, so it is a
-    // first-party surface like `/api`: `ordinary=required` still denies a
-    // client that cannot present an Access JWT. Third-party routes are
-    // deliberately excluded from that denial (see the header note).
     ctx.webServer.registerFallback = (handler: WebRoute['handler']): (() => void) => {
-      return originalRegisterFallback(async (req, res) => {
-        const gate = await authorize(req, deps)
-        if (gate.action === 'deny') {
-          logDenied(logger, {
-            method: gate.method,
-            reason: gate.reason,
-            privileged: gate.privileged,
-          })
-          writeAuth(res, gate.status, gate.body)
-          return
-        }
-        markAndForward(req, marksBrowserSession(gate))
-        await handler(req, res)
-      })
+      return originalRegisterFallback(wrapFallbackHandler(handler))
     }
   }
 
@@ -269,7 +318,61 @@ export function installServerCompat(ctx: CompatContext, deps: ServerCompatDeps):
     })
   }
 
+  // Routes registered before this plugin activated never saw the wrappers
+  // above (see the header note on activation order). Adopt them in place:
+  // dispatch reads `route.handler`, so replacing it is enough.
+  const restorations: Array<() => void> = []
+  let adopted = 0
+  const webServer = ctx.webServer
+
+  for (const table of [webServer.exact, webServer.prefixes]) {
+    if (!(table instanceof Map)) continue
+    for (const [path, route] of table) {
+      if (typeof route?.handler !== 'function' || isWrapped(route.handler)) continue
+      const wrapped: WebRoute = {
+        ...route,
+        handler: wrapHttpHandler(route.handler, isApiPrefix(route)),
+      }
+      table.set(path, wrapped)
+      adopted += 1
+      restorations.push(() => {
+        if (table.get(path) === wrapped) table.set(path, route)
+      })
+    }
+  }
+
+  if (webServer.upgrades instanceof Map) {
+    const upgrades = webServer.upgrades
+    for (const [path, route] of upgrades) {
+      if (typeof route?.handler !== 'function' || isWrapped(route.handler)) continue
+      const wrapped: WebUpgradeRoute = {
+        ...route,
+        handler: wrapUpgradeHandler(route.handler, isRemoteMuxUpgrade(route)),
+      }
+      upgrades.set(path, wrapped)
+      adopted += 1
+      restorations.push(() => {
+        if (upgrades.get(path) === wrapped) upgrades.set(path, route)
+      })
+    }
+  }
+
+  if (typeof webServer.fallback === 'function' && !isWrapped(webServer.fallback)) {
+    const original = webServer.fallback
+    const wrapped = wrapFallbackHandler(original)
+    webServer.fallback = wrapped
+    adopted += 1
+    restorations.push(() => {
+      if (webServer.fallback === wrapped) webServer.fallback = original
+    })
+  }
+
+  if (adopted > 0) {
+    logger.info(`adopted ${String(adopted)} route(s) registered before activation`)
+  }
+
   ctx.effect(() => () => {
+    for (const restore of restorations) restore()
     ctx.webServer.register = originalRegister
     ctx.webServer.registerUpgrade = originalRegisterUpgrade
     if (originalRegisterFallback !== undefined) {

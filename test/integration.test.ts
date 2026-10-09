@@ -10,9 +10,14 @@ import type { JwtVerification } from '../src/server/types.ts'
 interface FakeWebServer {
   register(route: WebRoute): () => void
   registerUpgrade(route: WebUpgradeRoute): () => void
-  registerFallback?(handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>): () => void
-  routes: Map<string, WebRoute>
+  registerFallback(handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>): () => void
+  /** DSH 的真实形状：按 path 存的路由表（本插件就地采纳时会替换条目）。 */
+  exact: Map<string, WebRoute>
+  prefixes: Map<string, WebRoute>
   upgrades: Map<string, WebUpgradeRoute>
+  fallback?: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>
+  /** 测试读取视图：`kind:path` → 当前表里的路由。 */
+  routes: { get(key: string): WebRoute | undefined }
 }
 
 function collectEffects(disposers: Array<() => void>) {
@@ -22,21 +27,44 @@ function collectEffects(disposers: Array<() => void>) {
   }
 }
 
+/**
+ * Mirrors the shipped webserver: routes live in per-kind Maps keyed by path and
+ * dispatch reads `route.handler`, so adopting a pre-registered route in place is
+ * observable through this fake.
+ */
 function createFakeWebServer(): FakeWebServer {
-  const routes = new Map<string, WebRoute>()
+  const exact = new Map<string, WebRoute>()
+  const prefixes = new Map<string, WebRoute>()
   const upgrades = new Map<string, WebUpgradeRoute>()
-  return {
-    routes,
+  const tableFor = (kind: string) => (kind === 'exact' ? exact : prefixes)
+  const webServer: FakeWebServer = {
+    exact,
+    prefixes,
     upgrades,
+    routes: {
+      get(key) {
+        const separator = key.indexOf(':')
+        return tableFor(key.slice(0, separator)).get(key.slice(separator + 1))
+      },
+    },
     register(route) {
-      routes.set(`${route.kind}:${route.path}`, route)
-      return () => { routes.delete(`${route.kind}:${route.path}`) }
+      const table = tableFor(route.kind)
+      table.set(route.path, route)
+      return () => { table.delete(route.path) }
     },
     registerUpgrade(route) {
       upgrades.set(route.path, route)
       return () => { upgrades.delete(route.path) }
     },
+    registerFallback(handler) {
+      if (webServer.fallback !== undefined) {
+        throw new Error('webserver: fallback already registered')
+      }
+      webServer.fallback = handler
+      return () => { webServer.fallback = undefined }
+    },
   }
+  return webServer
 }
 
 describe('server compat integration', () => {
@@ -937,6 +965,171 @@ describe('third-party routes reuse the Access JWT cookie substitution', () => {
       },
     })
     expect(seen).toEqual([undefined])
+    for (const dispose of disposers) dispose()
+  })
+})
+
+describe('routes registered before the plugin activated', () => {
+  const config = {
+    teamDomain: 'https://example.cloudflareaccess.com',
+    audiences: ['aud'],
+    ordinary: 'off' as const,
+    envLocked: { teamDomain: false, audiences: false, ordinary: false },
+  }
+
+  const withJwt = {
+    host: 'dsh.example.com',
+    origin: 'https://dsh.example.com',
+    'cf-access-jwt-assertion': 'valid',
+  }
+  const withoutJwt = { host: 'dsh.example.com', origin: 'https://dsh.example.com' }
+
+  function createConnection() {
+    return {
+      requestRejection(_req: IncomingMessage): 401 | 403 | undefined {
+        return 401
+      },
+      authorizeIndex(_req: IncomingMessage, res: ServerResponse): boolean {
+        res.writeHead(401)
+        res.end('dsh web authentication required')
+        return false
+      },
+    }
+  }
+
+  function marketHandler(connection: ReturnType<typeof createConnection>) {
+    return async (req: IncomingMessage, res: ServerResponse) => {
+      const rejection = connection.requestRejection(req)
+      if (rejection !== undefined) {
+        res.writeHead(rejection)
+        res.end('blocked')
+        return
+      }
+      res.writeHead(200)
+      res.end('market')
+    }
+  }
+
+  /**
+   * dshmarket mounts inside `ctx.inject(['webServer','loader'], …)`, which on
+   * 0.2.0-rc.2 runs before this plugin's own `apply`. The plugin must therefore
+   * adopt whatever is already in the webserver's route tables.
+   */
+  function activate(
+    webServer: FakeWebServer,
+    connection: ReturnType<typeof createConnection>,
+    input: { verify?: () => Promise<JwtVerification>, onVerify?: () => void } = {},
+  ) {
+    const disposers: Array<() => void> = []
+    installServerCompat({
+      webServer,
+      logger: { info() {}, warn() {} },
+      effect: collectEffects(disposers),
+      get() { return undefined },
+      inject(_deps, callback) {
+        callback({ connection })
+      },
+    }, {
+      config,
+      verifier: {
+        async verify() {
+          input.onVerify?.()
+          return input.verify === undefined
+            ? { outcome: 'valid', reason: null, audienceMatched: 'aud' }
+            : await input.verify()
+        },
+      },
+      getTrustedHosts: () => ['dsh.example.com'],
+    })
+    return { disposers }
+  }
+
+  it('adopts a third-party exact route that was registered first', async () => {
+    const webServer = createFakeWebServer()
+    const connection = createConnection()
+    const original = marketHandler(connection)
+    webServer.register({ kind: 'exact', path: '/dsh-market/status', handler: original })
+    const { disposers } = activate(webServer, connection)
+
+    const adopted = webServer.exact.get('/dsh-market/status')
+    expect(adopted?.handler).not.toBe(original)
+
+    const admitted = await invoke(adopted!.handler, { url: '/dsh-market/status', headers: withJwt })
+    expect(admitted.status).toBe(200)
+    expect(admitted.body).toBe('market')
+
+    const anonymous = await invoke(adopted!.handler, { url: '/dsh-market/status', headers: withoutJwt })
+    expect(anonymous.status).toBe(401)
+    expect(anonymous.body).toBe('blocked')
+
+    for (const dispose of disposers) dispose()
+    expect(webServer.exact.get('/dsh-market/status')?.handler).toBe(original)
+  })
+
+  it('adopts a third-party prefix route and an upgrade registered first', async () => {
+    const webServer = createFakeWebServer()
+    const connection = createConnection()
+    webServer.register({ kind: 'prefix', path: '/dsh-market', handler: marketHandler(connection) })
+    const seen: Array<401 | 403 | undefined> = []
+    webServer.registerUpgrade({
+      path: '/dsh-market/events',
+      handler: async (req) => { seen.push(connection.requestRejection(req)) },
+    })
+    const { disposers } = activate(webServer, connection)
+
+    const admitted = await invoke(webServer.prefixes.get('/dsh-market')!.handler, {
+      url: '/dsh-market/status',
+      headers: withJwt,
+    })
+    expect(admitted.status).toBe(200)
+
+    await invokeUpgrade(webServer.upgrades.get('/dsh-market/events')!.handler, {
+      url: '/dsh-market/events',
+      headers: withJwt,
+    })
+    expect(seen).toEqual([undefined])
+
+    for (const dispose of disposers) dispose()
+  })
+
+  it('adopts an index fallback registered first', async () => {
+    const webServer = createFakeWebServer()
+    const connection = createConnection()
+    webServer.registerFallback(async (req, res) => {
+      if (!connection.authorizeIndex(req, res)) return
+      res.writeHead(200)
+      res.end('index')
+    })
+    const { disposers } = activate(webServer, connection)
+
+    const admitted = await invoke(webServer.fallback!, { url: '/', headers: withJwt })
+    expect(admitted.status).toBe(200)
+    expect(admitted.body).toBe('index')
+
+    const anonymous = await invoke(webServer.fallback!, { url: '/', headers: withoutJwt })
+    expect(anonymous.status).toBe(401)
+
+    for (const dispose of disposers) dispose()
+  })
+
+  it('wraps an adopted route exactly once', async () => {
+    const webServer = createFakeWebServer()
+    const connection = createConnection()
+    webServer.register({ kind: 'exact', path: '/dsh-market/status', handler: marketHandler(connection) })
+    let verifications = 0
+    const { disposers } = activate(webServer, connection, { onVerify: () => { verifications += 1 } })
+
+    const route = webServer.exact.get('/dsh-market/status')
+    await invoke(route!.handler, { url: '/dsh-market/status', headers: withJwt })
+    expect(verifications).toBe(1)
+
+    // Activating a second time must not stack another wrapper on the same route.
+    const second = activate(webServer, connection, { onVerify: () => { verifications += 1 } })
+    const readopted = webServer.exact.get('/dsh-market/status')
+    await invoke(readopted!.handler, { url: '/dsh-market/status', headers: withJwt })
+    expect(verifications).toBe(2)
+
+    for (const dispose of second.disposers) dispose()
     for (const dispose of disposers) dispose()
   })
 })

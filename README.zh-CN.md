@@ -173,7 +173,7 @@ auth:
 | `settings/*` 返回 401 | Access header 缺失或未被转发。查反向代理是否转发 `Cf-Access-Jwt-Assertion`。loopback 仍须打开 `dsh web` 打印的 `?token=` URL。 |
 | `settings/*` 返回 403 | `iss`/`aud`/签名/过期无效、插件未配置、Host/Origin 不匹配，或 Origin 时钟偏差超过约 30 秒。 |
 | `ordinary=required` 时事件 WebSocket 失败 | `/api/remote.mux` 走普通 API 策略。缺 JWT → 401；无效 JWT → 403。 |
-| Access 后面其他插件的路由返回 401（例如 `/dsh-market/*`） | 2.1.0 已修复：Access JWT 的 Cookie 替代以前只覆盖 `/api`。升级本包即可，无需改配置。 |
+| Access 后面其他插件的路由返回 401（例如 `/dsh-market/*`） | 2.1.1 已修复：Access JWT 的 Cookie 替代以前只覆盖 `/api`（2.1.0），随后又只覆盖**本插件激活之后**注册的路由（2.1.1 会采纳已经注册的路由）。升级本包即可，无需改配置。 |
 | Loopback Settings 坏了 | 卸载插件；loopback 不得要求 JWT。若仍要求，请报 bug。 |
 | JWKS / 密钥轮换失败 | Origin 必须能访问 `https://<team>/cdn-cgi/access/certs`。Cloudflare 轮换密钥后无需改配置。 |
 | 日志 | 只记录类别（`expired`、`invalid_signature`、`issuer_mismatch`、`audience_mismatch`、`missing_token`、`jwks_unavailable`、`unconfigured`）。从不记录 token。 |
@@ -186,7 +186,7 @@ auth:
 | --- | --- | --- |
 | 1.0.x | 0.1.1-rc.2（0.1.2 之前） | Live 验证（Web profile，远程 Settings / Credentials）。走 `apiProxy` + privileged pin。与 DSH 0.1.2+ 不兼容。 |
 | 2.0.x | 0.1.5-alpha.1 | 已在 Cloudflare Access 后的 Web profile 上 live 验证（远程 Settings 不需要 DSH `?token=`）。单元/集成测试。CI 不启动 DSH 进程。 |
-| 2.1.x | 0.1.5-alpha.1、0.2.0-rc.2 | `0.2.0-rc.2` 已对照安装的 DSH 包核对，并在 Access 后的 Web profile 上 live 验证（有效 JWT、伪造 JWT → 403、loopback → 401、`/api` 拒绝范围不变）；privileged 端点名已对照 `dsh-api-settings-controller`、`dsh-agent-preset-registry`、`dsh-llm` 重新核对。单元/集成测试。CI 不启动 DSH 进程。 |
+| 2.1.x | 0.1.5-alpha.1、0.2.0-rc.2 | `0.2.0-rc.2` 已对照安装的 DSH 包核对，并在 Access 后的 Web profile 上 live 验证（有效 JWT、伪造 JWT → 403、loopback → 401、`/api` 拒绝范围不变；激活顺序探针见 `docs/references/dsh-source-research.md` §8.1，并用真实 `dshmarket@1.66.14` 在两种挂载顺序下复现）；privileged 端点名已对照 `dsh-api-settings-controller`、`dsh-agent-preset-registry`、`dsh-llm` 重新核对。单元/集成测试。CI 不启动 DSH 进程。 |
 
 在本矩阵更新之前，不要默认更新的 DSH 版本可用。
 

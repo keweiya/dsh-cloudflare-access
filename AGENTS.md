@@ -19,6 +19,7 @@ release rules remain authoritative.
 - unload 必须可逆：恢复 `webServer.register` / `registerUpgrade` / `registerFallback`、`connection.requestRejection` / `authorizeIndex` 与 `connection.isLoopback`。
 - 远程 + 有效 Access JWT 可代替 DSH launch-token Cookie。loopback 仍走官方 token/Cookie。
 - 豁免（跳过 DSH launch-token Cookie）必须打在**每一条**注册路由与每一个 upgrade 上：`connection.requestRejection` 是宿主开放给所有路由所有者的检查，第三方插件（如 dshmarket 的 `/dsh-market/*`）也用它。policy 的 **deny** 只允许作用于 `/api`、`/api/remote.mux` 与 index fallback；第三方路由的准入由它自己的所有者裁决。
+- 覆盖范围**不得依赖激活顺序**。本插件走 plugin 级 `inject = ['webServer']`，apply 会被框架延后；第三方插件在自己的 `apply` 里用 `ctx.inject([...])` 可能在服务一可用时就注册路由（dshmarket 实测如此）。因此激活时必须同时扫一遍 webserver 已注册的 `exact` / `prefixes` / `upgrades` 表与 `fallback`，就地替换 `route.handler` 采纳它们。表结构缺失或形状不同时跳过（退回「只覆盖激活之后注册的路由」），且采纳过的条目在 unload 时必须还原、不得二次包装。
 - 日志只记录原因类别，不得记录 token、Cookie、凭据。
 
 ## 交付形态
