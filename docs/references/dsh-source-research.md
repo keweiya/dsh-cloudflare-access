@@ -132,4 +132,14 @@ live 探针（对 Access 后的运行实例，伪造 header）：
 
 原因：`dshmarket@1.66.14` 在自己的 `apply` 里 `ctx.inject(['webServer','loader'], (hostCtx) => { … host.webServer.register(…) })`，服务可用即同步注册 48 条 `/dsh-market/*` 路由；本插件走 plugin 级 `inject = ['webServer']`，`apply` 由 Cordis 延后。用真实市场代码复现（`mountMarketRoutes` + `refuseUnadmitted`）：`compat-first` → 200，`compat-last` → 401（与线上一致）。2.1.1 的采纳（adopt）修好后两种顺序都是 200。
 
+2.1.1 装回同一实例并重启（PID 25099，启动于 `01:02:58`）后，同一个探针的对照：
+
+| 探针 | 2.1.0 | 2.1.1 |
+| --- | --- | --- |
+| `/dsh-market/api/v1/capabilities` + 未知-kid JWT | 0.001s | **0.582s**（重取 JWKS，说明走了验签） |
+| 同请求无 JWT | 0.001s | 0.001s |
+| 同请求紧接着再发一次（冷却期内） | — | 0.002s |
+
+状态码不变：`/api/settings/describe` + 伪造 JWT → 403，`/dsh-market/api/v1/capabilities` + 伪造 JWT → 401（市场自己的准入裁决）。
+
 路由表形状（`dsh-host-webserver` rc.2）：`this.exact` / `this.prefixes` / `this.upgrades` 是 `Map<path, route>`，`this.fallback` 是 handler；`match()` 与 upgrade 分支、fallback 分支都在请求时读 `route.handler`，所以在表里就地替换 handler 即可生效。

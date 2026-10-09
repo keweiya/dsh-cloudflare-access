@@ -28,6 +28,7 @@
 - [x] 3.8 `README.md` / `README.zh-CN.md`：故障排查行与兼容性矩阵 2.1.x 行。
 - [x] 3.9 `docs/README.md`：版本号。
 - [x] 3.10 `openspec/specs/dsh-authorization/spec.md`：基线增加「先注册的路由也必须被采纳」场景。
+- [x] 3.11 `README.md` / `README.zh-CN.md`：安装章节写明三条安装路径（npm / 本 fork 的 tarball / `github:` + pnpm `allowBuilds` 闸门）、重启要求与版本确认方式。
 
 ## 4. 验证
 
@@ -35,5 +36,5 @@
 - [x] 4.2 `npm run typecheck`。
 - [x] 4.3 `npm run build` 两次产物一致（零漂移）。
 - [x] 4.4 真实 `dshmarket@1.66.14` 代码 + 真实 `jose` 验签，两种挂载顺序均通过。
-- [x] 4.5 `npm pack` 产物内容与已提交 `lib/` 一致。
-- [ ] 4.6 线上：重装 2.1.1 后用未知-kid 时序探针确认市场路由走验签。
+- [x] 4.5 `npm pack` 产物内容与已提交 `lib/` 一致（`npm run pack:check`，本机 pnpm 二进制不可用时用 shim 跑通）。
+- [x] 4.6 线上：重装 2.1.1 并重启（PID 25099，启动于 `01:02:58`）后，未知-kid 时序探针下市场路由从 0.001s 变为 **0.582s**（走了验签）；无 JWT 基线仍 0.001s，`/api` 403、市场路由无有效 JWT 401 均不变。
