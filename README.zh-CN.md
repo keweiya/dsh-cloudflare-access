@@ -37,6 +37,8 @@ Web Client 只做 capability enablement（`connection.isLoopback`）。授权裁
 dsh plugin --profile web add dsh-cloudflare-access
 ```
 
+如果要在第三方路由修复（Access 后面的 `/dsh-market/*`）进入 npm 之前就用上，改装本 fork——本地 tarball 与 `github:` 的命令见[安装](#安装)。
+
 4. 锁定信任根（生产环境建议如此）：
 
 ```sh
@@ -76,29 +78,66 @@ Origin 应只对 Cloudflare（或等价入口）可达。安装本插件不是�
 
 ## 安装
 
-需要 **Web** profile。包在 [npm](https://www.npmjs.com/package/dsh-cloudflare-access)。
+需要 **Web** profile，DSH 版本为 `0.1.5-alpha.1` 或 `0.2.0-rc.2`（见[兼容性](#兼容性)）。安装**不需要**手工编辑 `$DSH_HOME/profiles/web/cordis.patch.yml`，也不需要改 DSH 本体：`dsh plugin add` 写 profile 的 `package.json` / lockfile，插件行由本包的 `dsh.bundle.patch`（`cordis.patch.yml`）插入。
+
+### 从 npm 安装
 
 ```sh
 dsh plugin --profile web add dsh-cloudflare-access
 ```
 
-未发布的 Git commit：
+registry 上目前是 `2.0.0`，两次路由覆盖修复都不包含：在 Access 后面，第三方插件的路由（例如 `/dsh-market/*`）即使带有效 JWT 仍会返回 401。先 `npm view dsh-cloudflare-access version` 确认裸装会解析到哪个版本；在新版本发布之前，请用下面的 fork 安装方式。
+
+### 从本 fork 安装
+
+第三方路由（Access 后面 `/dsh-market/*` 返回 401）的修复在这个 fork 的分支上。**本地 tarball 是不需要构建审批的那条路**：
 
 ```sh
-dsh plugin --profile web add github:Luawig/dsh-cloudflare-access
+git clone https://github.com/keweiya/dsh-cloudflare-access
+cd dsh-cloudflare-access
+git checkout fix/cover-third-party-routes
+npm pack --ignore-scripts --pack-destination /tmp   # 打包已提交的 lib/
+dsh plugin --profile web add /tmp/dsh-cloudflare-access-2.1.1.tgz
 ```
 
-Git 树已包含预构建的 `lib/index.js` 和 `lib/client.js`。`github:` 安装使用这些产物，不需要 TypeScript 或 esbuild。
+`--ignore-scripts` 打包已提交的 `lib/` 并跳过 `prepare` 构建。想自己从源码构建：先 `npm install --include=dev && npm run build`，再不带该参数执行 `npm pack`。
 
-重启 DSH。不要手工编辑 `$DSH_HOME/profiles/web/cordis.patch.yml`，也不要改 DSH 本体。
+直接从 Git 装也可以，但 pnpm 会拦住 git 包的 `prepare` 脚本，直到你显式放行：
 
-卸载：
+```sh
+dsh plugin --profile web add github:keweiya/dsh-cloudflare-access#fix/cover-third-party-routes
+```
+
+第一次会以 `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED` 失败，并把需要放行的**精确键**打印出来——键里含解析到的 commit：
+
+```yaml
+# $DSH_HOME/profiles/web/pnpm-workspace.yaml
+allowBuilds:
+  "dsh-cloudflare-access@https://codeload.github.com/keweiya/dsh-cloudflare-access/tar.gz/<commit>": true
+```
+
+把该键加进去，重跑同一条命令即可装完（依赖安装时 `prepare` 脚本会跳过自己的构建，直接用已提交的 `lib/`）。因为键锁定了 commit，分支一旦移动就要重新加键——经常这么装的话，建议用 tarball 或固定 tag。
+
+### 重启并确认
+
+`dsh plugin add` 只改磁盘上的 profile；运行中的 `dsh web` 仍在用启动时加载的 fiber，所以**不重启就不会生效**。
+
+```sh
+systemctl restart dsh                                   # 或者你启动 dsh web 的方式
+journalctl -u dsh -n 30 --no-pager | grep 'dsh web:'    # 新的 loopback ?token= 网址
+dsh --profile web --dump-config | grep -A1 cloudflare-access
+```
+
+输出里应有一层 `dsh-cloudflare-access` 和一行插件 `id: cloudflare-access`。想确认**实际加载**的版本，把进程启动时间和安装时间对一下：`systemctl show -p MainPID,ActiveEnterTimestamp dsh`。
+
+### 卸载 / 回滚
 
 ```sh
 dsh plugin --profile web remove dsh-cloudflare-access
+systemctl restart dsh
 ```
 
-unload 后，本插件的 JWT 包装消失。若运行中的进程仍是旧 fiber，再重启一次。
+卸载后本插件的 JWT 包装消失：远程访问退回 DSH 自己的 `?token=` Cookie，每条路由的行为与安装本插件之前一致。
 
 ## 配置
 

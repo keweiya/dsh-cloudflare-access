@@ -37,6 +37,8 @@ Interactive figures (theme switch, guided views, SVG/PNG export): [deployment](.
 dsh plugin --profile web add dsh-cloudflare-access
 ```
 
+If you need the third-party-route fix (`/dsh-market/*` behind Access) before it reaches npm, install this fork instead — see [Install](#install) for the local-tarball and `github:` commands.
+
 4. Lock the trust root (recommended in production):
 
 ```sh
@@ -76,29 +78,66 @@ The waiver is additive and only ever skips DSH's browser-session cookie. It requ
 
 ## Install
 
-Requires a **Web** profile. The package is on [npm](https://www.npmjs.com/package/dsh-cloudflare-access).
+Requires a **Web** profile running DSH `0.1.5-alpha.1` or `0.2.0-rc.2` (see [Compatibility](#compatibility)). Installing never means editing `$DSH_HOME/profiles/web/cordis.patch.yml` by hand, and never means patching DSH itself: `dsh plugin add` writes the profile's `package.json` / lockfile, and this package's `dsh.bundle.patch` (`cordis.patch.yml`) inserts the plugin row.
+
+### From npm
 
 ```sh
 dsh plugin --profile web add dsh-cloudflare-access
 ```
 
-Unreleased Git commit:
+The registry currently serves `2.0.0`, which predates both route-coverage fixes: behind Access, a third-party plugin's routes (for example `/dsh-market/*`) still answer 401 with a valid JWT. Check what a bare install resolves to with `npm view dsh-cloudflare-access version`, and use the fork install below until a newer version is published.
+
+### From this fork
+
+The fix for third-party routes (`/dsh-market/*` 401 behind Access) lives on this fork's branch. A local tarball is the path that needs no build approval:
 
 ```sh
-dsh plugin --profile web add github:Luawig/dsh-cloudflare-access
+git clone https://github.com/keweiya/dsh-cloudflare-access
+cd dsh-cloudflare-access
+git checkout fix/cover-third-party-routes
+npm pack --ignore-scripts --pack-destination /tmp   # packs the committed lib/
+dsh plugin --profile web add /tmp/dsh-cloudflare-access-2.1.1.tgz
 ```
 
-The Git tree ships prebuilt `lib/index.js` and `lib/client.js`. A `github:` install uses those artifacts and does not need TypeScript or esbuild.
+`--ignore-scripts` packs the committed `lib/` and skips the `prepare` build. To build from source instead, run `npm install --include=dev && npm run build`, then `npm pack` without the flag.
 
-Restart DSH. You do not edit `$DSH_HOME/profiles/web/cordis.patch.yml` by hand, and you do not patch DSH itself.
+Installing straight from Git also works, but pnpm blocks a git package's `prepare` script until you allow it:
 
-Uninstall:
+```sh
+dsh plugin --profile web add github:keweiya/dsh-cloudflare-access#fix/cover-third-party-routes
+```
+
+The first attempt fails with `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED` and prints the exact key to allow — it includes the resolved commit:
+
+```yaml
+# $DSH_HOME/profiles/web/pnpm-workspace.yaml
+allowBuilds:
+  "dsh-cloudflare-access@https://codeload.github.com/keweiya/dsh-cloudflare-access/tar.gz/<commit>": true
+```
+
+Add that key, re-run the same command, and the install completes using the committed `lib/` (the `prepare` script skips its own build during a dependency install). Because the key pins a commit, a moved branch needs a new key — prefer the tarball, or install from a fixed tag, if you do this often.
+
+### Restart, then confirm
+
+`dsh plugin add` only changes the profile on disk; a running `dsh web` keeps the fiber it started with, so the new version is not active until DSH restarts.
+
+```sh
+systemctl restart dsh                                   # or however you run dsh web
+journalctl -u dsh -n 30 --no-pager | grep 'dsh web:'    # new loopback ?token= URL
+dsh --profile web --dump-config | grep -A1 cloudflare-access
+```
+
+The dump shows a layer `dsh-cloudflare-access` and a plugin row `id: cloudflare-access`. To confirm the version that is actually loaded, compare the process start time against the install: `systemctl show -p MainPID,ActiveEnterTimestamp dsh`.
+
+### Uninstall / roll back
 
 ```sh
 dsh plugin --profile web remove dsh-cloudflare-access
+systemctl restart dsh
 ```
 
-After unload, this plugin's JWT wrap is gone. Restart if the running process still has the old fiber.
+After unload, this plugin's JWT wrap is gone: remote access falls back to DSH's own `?token=` cookie, and every route behaves as it did before the plugin was installed.
 
 ## Configure
 

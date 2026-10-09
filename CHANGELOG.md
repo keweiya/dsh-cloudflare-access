@@ -6,6 +6,7 @@
 
 - Adopt the routes that were already registered when the plugin activates. Wrapping `webServer.register` alone only covers routes registered **after** it, and on `0.2.0-rc.2` a third-party plugin can mount first: dshmarket registers its 48 `/dsh-market/*` routes inside `ctx.inject(['webServer','loader'], …)`, which runs before this plugin's `apply` (deferred by `inject = ['webServer']`). 2.1.0 therefore left exactly the routes it meant to cover unmarked, and the market still answered 401 behind Access. Activation now also sweeps the webserver's `exact` / `prefixes` / `upgrades` tables and the fallback seat, replacing `route.handler` in place — dispatch reads that property, so ordering no longer matters. Adopted entries are restored on unload, and re-activation never stacks a second wrapper.
 - Verified against the real `dshmarket@1.66.14` code on `0.2.0-rc.2`: `mountMarketRoutes` + `refuseUnadmitted` answer 200 for a valid Access JWT and 401 without one in both mount orders (plugin first, plugin last). 2.1.0 failed the second order.
+- Documented how to install this fork: the local-tarball path (`npm pack --ignore-scripts` packs the committed `lib/`), the `github:` path together with the pnpm `allowBuilds` gate it trips, the restart that activation actually requires, and how to confirm the loaded version. Also noted that the registry still serves `2.0.0`, so a bare `dsh plugin add dsh-cloudflare-access` carries neither route-coverage fix.
 
 ## 2.1.0
 
