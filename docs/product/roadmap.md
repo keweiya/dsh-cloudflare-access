@@ -3,10 +3,10 @@
 ## 状态
 accepted
 
-## 当前 — Origin JWT 映射（插件 2.0.x / DSH 0.1.5-alpha.1）
+## 当前 — Origin JWT 映射（插件 2.1.x / DSH 0.1.5-alpha.1 与 0.2.0-rc.2）
 - 状态：已实现；对照官方 npm 包扩展点，并在 Access 后的 Web profile 上 live 验证远程 Settings。
 - 目标：在不修改 DSH 本体的前提下，把 Cloudflare Access 身份映射为 DSH 远程配置面授权。
-- 交付能力：JWT 验证、privileged 授权、普通 API 三模式、Client capability（含 immediately prefetch）、Bundle/Client 包装、测试与安全文档。JWT 叠在原 `/api` / `/api/remote.mux` / index 之前；远程有效 Access JWT 跳过 DSH launch-token Cookie。
+- 交付能力：JWT 验证、privileged 授权、普通 API 三模式、Client capability（含 immediately prefetch）、Bundle/Client 包装、测试与安全文档。JWT 叠在原 `/api` / `/api/remote.mux` / index 之前，也叠在第三方插件注册的路由与 upgrade 之前；远程有效 Access JWT 跳过 DSH launch-token Cookie。policy 的 deny 只作用于 DSH 自己的面。
 - 不包含：RBAC、Cloudflare API、`host.pickDirectory` / `host.openPath`、插件市场 listing。
 - 验收方式：`docs/product/acceptance-criteria.md`；单元/集成测试；Access 后的 Web profile live 验证。
 

@@ -57,7 +57,9 @@ auth:
 
 ## 特权方法清单
 
-权威来源：DSH `0.1.5-alpha.1` Typert Remote map（`dsh-api-settings-controller`、`dsh-agent-presets`、`dsh-llm`）。本插件 **放行**配置面子集，**不把** native directory-picker / `host.openPath` 列入放行集合。
+权威来源：DSH Typert Remote map，已对照 `0.1.5-alpha.1` 与 `0.2.0-rc.2` 的安装包核对（`dsh-api-settings-controller`、`dsh-agent-preset-registry`、`dsh-llm`）。本插件 **放行**配置面子集，**不把** native directory-picker / `host.openPath` 列入放行集合。
+
+名单是两条支持线的并集：某个方法在当前版本不存在时该条目无害，而缺失条目在 `ordinary=off` 下是 fail open。`settings/canOpenAgentPresetDirectory`、`settings/openAgentPresetDirectory`、`agentPresets/copy`、`agentPresets/deletePreset` 是 `0.1.5-alpha.1` 专有（`0.2.0-rc.2` 已移除）。
 
 | method | 本插件远程 + JWT |
 | --- | --- |

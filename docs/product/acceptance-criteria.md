@@ -15,6 +15,8 @@ accepted
 - AC-ORDINARY-1: `off` / `optional` / `required` 三种普通 API 模式符合 `docs/rules.md` 中 RULE-AUTH-ORDINARY-*。
 - AC-ROTATE-1: Cloudflare 更换签名 key 后，无需改插件配置、重启 DSH 或重新发布插件；JWKS 刷新后验证恢复。
 - AC-UNLOAD-1: 删除或禁用插件后，本插件的 JWT 包装与 Cookie 跳过消失，无残留 `register` / `registerFallback` / `isLoopback` / `requestRejection` 包装。
+- AC-THIRD-PARTY-1: 第三方插件注册的路由（如 dshmarket 的 `/dsh-market/*`）在远程 + 有效 JWT 时同样跳过 DSH launch-token Cookie：这些路由自己调用 `connection.requestRejection` 时得到 `undefined`。
+- AC-THIRD-PARTY-2: 第三方路由的准入不由本插件裁决：无 JWT / 无效 JWT 时本插件既不标记也不拒绝，行为与未安装本插件时一致；`ordinary=required` 不得拒绝非 `/api`、非 `/api/remote.mux`、非 index fallback 的路由。
 
 ## 场景验收标准
 
@@ -50,11 +52,20 @@ accepted
 - WHEN unload
 - THEN 同样的远程 privileged 请求回到官方 403/forbidden 行为
 
+### 场景 F：第三方插件路由
+- GIVEN 另一插件注册了 exact 路由（例如 `/dsh-market/*`），且该 handler 自己调用 `connection.requestRejection`
+- WHEN 远程 + 有效 Access JWT + 合法 Host/Origin
+- THEN 该 handler 拿到 `undefined` 并正常返回，不要求 DSH launch-token Cookie
+- WHEN 远程但无 JWT 或 JWT 无效
+- THEN 本插件不标记也不拒绝，该路由按自己的裁决返回（与未安装本插件时一致）
+- WHEN `ordinary=required` 且该路由不是 `/api` / `/api/remote.mux` / index fallback
+- THEN 本插件不得拒绝它（静态资源、健康检查、webhook 仍可用）
+
 ## 非功能验收标准
 - 性能：不在每个请求上拉取 Cloudflare JWKS；不缓存单个 JWT 结果。Host/Origin 失败、loopback、以及 `ordinary=off` 且无 Access JWT 的普通 API 不进行 JWT 验签。远程若带了 Access JWT 则验签，用于跳过 DSH Cookie。
 - 安全：fail closed；JWT 不能替代 Host/Origin；日志不记录 token / Cookie / credential / API key。
 - 可观测性：启动时记录 issuer 是否配置、audience 数量、ordinary 模式；失败记录原因类别。
-- 兼容性：README 兼容性矩阵只写 `2.0.x` / `0.1.5-alpha.1`。peerDependencies 不声明未测范围。
+- 兼容性：README 兼容性矩阵只写 `2.1.x` / `0.1.5-alpha.1` / `0.2.0-rc.2`。peerDependencies 只声明这两个已测版本。
 
 ## 不验收事项
 - 远程 `host.pickDirectory` / `host.openPath` 可用。

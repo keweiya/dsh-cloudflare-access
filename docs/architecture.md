@@ -28,7 +28,7 @@ dsh-cloudflare-access
    └─ Client: capability enablement
 ```
 
-DSH `0.1.5-alpha.1` 没有公开 authorization hook。架构选择是：
+DSH `0.1.5-alpha.1` 与 `0.2.0-rc.2` 都没有公开 authorization hook。架构选择是：
 
 ```text
 Hook A → Server authorization
@@ -36,7 +36,7 @@ Hook B → Client capability
 Bundle C → 自动安装
 ```
 
-不修改 DSH dist/source。版本相关包装只存在于 `compat/`。决策见 `docs/decisions/ADR-0005-dsh-015-hook-strategy.md`。
+不修改 DSH dist/source。版本相关包装只存在于 `compat/`。决策见 `docs/decisions/ADR-0005-dsh-015-hook-strategy.md`（hook 选择）与 `docs/decisions/ADR-0006-route-coverage-for-cookie-substitution.md`（豁免与拒绝各自的范围）。
 
 ## 系统组件
 
@@ -56,13 +56,13 @@ Bundle C → 自动安装
 - 职责：按 loopback / privileged / ordinary 模式给出 allow/deny 与错误类别。
 - 非职责：实现 JWKS、修改 DSH 路由表。
 - 上游：请求元数据、JwtVerifier 结果。
-- 下游：compat 层的 `/api` 包装。
+- 下游：compat 层的路由包装。
 
 ### DshCompatServer
-- 职责：在 `webServer.register` 上可逆包装 `/api`、`/api/remote.mux` upgrade 与 index fallback，把 JWT policy 插在 DSH 现有 handler 之前；远程 + 有效 JWT 在 Host/Origin 通过后交给原 handler，并跳过 DSH launch-token Cookie。不伪造 loopback Host。
-- 非职责：JWT 解析、普通业务 RPC。
+- 职责：在 `webServer.register` / `registerUpgrade` / `registerFallback` 上做可逆包装。豁免标记覆盖每一条注册路由与每一个 upgrade（`connection.requestRejection` 是宿主开放给所有路由所有者的检查，第三方插件也用它）；JWT policy 的 deny 只作用于 `/api`、`/api/remote.mux` 与 index fallback。远程 + 有效 JWT 在 Host/Origin 通过后交给原 handler，并跳过 DSH launch-token Cookie。不伪造 loopback Host。
+- 非职责：JWT 解析、普通业务 RPC、替第三方路由裁决准入。
 - 上游：`webServer`、AuthorizationPolicy。
-- 下游：DSH 原 `/api` handler。
+- 下游：DSH 原 `/api` handler、第三方插件注册的路由与 upgrade。
 
 ### DshCompatClient
 - 职责：可逆包装 `connection.isLoopback`，让远程 Web 使用 Host settings persistence 并尝试 privileged RPC。
@@ -106,6 +106,13 @@ RULE-ARCH-6: Client 模块必须 `dsh.client.immediately: true` 且 inject `@dee
 ### Loopback
 1. 包装层识别 loopback 后直接交给 DSH 原 handler。
 2. 不读取、不要求 JWT，也不跳过 DSH launch-token Cookie。
+
+### 第三方插件路由（exact / upgrade）
+1. 第三方插件（例如 dshmarket 的 `/dsh-market/*`）注册自己的路由，handler 内调用 `connection.requestRejection`。
+2. 包装层先做 Host/Origin，再决定是否验签；远程 + 有效 JWT 时把该请求标记为已由 Access 认证。
+3. handler 的 `requestRejection` 因此返回 `undefined`，不再索要 DSH launch-token Cookie。
+4. 无 JWT / 无效 JWT 时不标记，也不拒绝：路由按自己的裁决返回，行为与未安装本插件时一致。
+5. `ordinary` 模式不作用于这些路由——它们不属于 DSH 自己的面。
 
 ### Client
 1. Client Module 在 `connection` 可用后把 `isLoopback` 包装为 capability 开启。

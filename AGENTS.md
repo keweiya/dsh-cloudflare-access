@@ -18,6 +18,7 @@ release rules remain authoritative.
 - 不要开放 `host.pickDirectory` / `host.openPath`。
 - unload 必须可逆：恢复 `webServer.register` / `registerUpgrade` / `registerFallback`、`connection.requestRejection` / `authorizeIndex` 与 `connection.isLoopback`。
 - 远程 + 有效 Access JWT 可代替 DSH launch-token Cookie。loopback 仍走官方 token/Cookie。
+- 豁免（跳过 DSH launch-token Cookie）必须打在**每一条**注册路由与每一个 upgrade 上：`connection.requestRejection` 是宿主开放给所有路由所有者的检查，第三方插件（如 dshmarket 的 `/dsh-market/*`）也用它。policy 的 **deny** 只允许作用于 `/api`、`/api/remote.mux` 与 index fallback；第三方路由的准入由它自己的所有者裁决。
 - 日志只记录原因类别，不得记录 token、Cookie、凭据。
 
 ## 交付形态
@@ -35,4 +36,4 @@ pnpm typecheck
 pnpm pack:check
 ```
 
-兼容性矩阵只写实测过的 DSH 版本。当前 target 是 `0.1.5-alpha.1`（已对照官方 npm 包扩展点，并在 Access 后的 Web profile 上 live 验证远程访问；本仓库 CI 不启动 DSH 进程）。
+兼容性矩阵只写实测过的 DSH 版本。当前 target 是 `0.1.5-alpha.1` 与 `0.2.0-rc.2`（已对照官方 npm 包扩展点，并在 Access 后的 Web profile 上 live 验证远程访问；本仓库 CI 不启动 DSH 进程）。privileged 端点名必须对照安装的 DSH 包核对，不得凭记忆推断。

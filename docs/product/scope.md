@@ -13,7 +13,7 @@ accepted
 - 包装：正式 `dsh.bundle` + `dsh.client`，Env/Cordis 配置。
 - 质量：单元测试、集成测试、README、SECURITY.md、CHANGELOG.md、MIT npm 包。
 
-目标 DSH 版本：`0.1.5-alpha.1`（已对照官方 npm 包扩展点）。兼容性矩阵只写该版本。
+目标 DSH 版本：`0.1.5-alpha.1` 与 `0.2.0-rc.2`（均已对照官方 npm 包扩展点；`0.2.0-rc.2` 另在 Access 后的 Web profile 上 live 验证）。兼容性矩阵只写这两个版本。
 
 ## 明确不做
 

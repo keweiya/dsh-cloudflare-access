@@ -8,7 +8,7 @@
 
 不提供登录页、密码库、MFA、会话表或 Cloudflare API 客户端。
 
-插件 **`2.0.x`** 对准 DeepSeek Harness **`0.1.5-alpha.1`**。插件 **`1.0.x`** 是 DSH `0.1.2` 之前那条线（live 验证于 `0.1.1-rc.2`）。在[兼容性矩阵](#兼容性)更新之前，不要默认其他 DSH 版本可用。
+插件 **`2.1.x`** 支持 DeepSeek Harness **`0.1.5-alpha.1`** 与 **`0.2.0-rc.2`**。插件 **`2.0.x`** 是只支持 `0.1.5-alpha.1` 的那条线，**`1.0.x`** 是 DSH `0.1.2` 之前那条线（live 验证于 `0.1.1-rc.2`）。在[兼容性矩阵](#兼容性)更新之前，不要默认其他 DSH 版本可用。
 
 ## 架构
 
@@ -44,7 +44,7 @@ export DSH_CF_ACCESS_TEAM_DOMAIN=https://example.cloudflareaccess.com
 export DSH_CF_ACCESS_AUDIENCES=your-access-application-aud
 ```
 
-5. 经 Access 打开站点并硬刷新一次，再打开 Settings。Origin 上有效的 `Cf-Access-Jwt-Assertion` 会代替远程 Host 上的 DSH launch-token Cookie。loopback 仍须使用 `dsh web` 打印的 `?token=` URL。
+5. 经 Access 打开站点并硬刷新一次，再打开 Settings。Origin 上有效的 `Cf-Access-Jwt-Assertion` 会代替远程 Host 上的 DSH launch-token Cookie——对 DSH 自己的 `/api` 与其他插件注册的路由都成立。loopback 仍须使用 `dsh web` 打印的 `?token=` URL。
 
 用 `dsh --profile web --dump-config` 确认 bundle：应有一层名为 `dsh-cloudflare-access`，以及插件行 `id: cloudflare-access`。
 
@@ -64,6 +64,15 @@ Origin 应只对 Cloudflare（或等价入口）可达。安装本插件不是�
 先做 Host/Origin。有效 JWT 不得把 Host 改写为 loopback。privileged 成功交给原 `/api` handler（DSH Remote）；远程信任主机上有效 Access JWT 同时跳过 DSH launch-token Cookie。缺失或无效 JWT 返回 401/403，且不进入 privileged 业务实现。Loopback 不读 JWT，仍走官方 token/Cookie。
 
 转发 `Host`、`Origin` 和 `Cf-Access-Jwt-Assertion`。不要剥掉 assertion 头。不要信任 `CF_Authorization` Cookie。
+
+### Access JWT 覆盖哪些路由
+
+`connection.requestRejection` 是 DSH 开放给**每一个**路由所有者的准入检查，不是 `/api` 私有物：第三方插件也用它（dshmarket ≥ 1.66.13 把它的 48 条 `/dsh-market/*` 路由都放在这道检查后面）。因此本插件按路由把两件事分开：
+
+- **Cookie 替代——所有路由。** 每一条注册路由与每一个 WebSocket upgrade 都会拿到 Access JWT 豁免，于是那些自己调用宿主准入检查的路由，也会放行已由 Access 认证过的浏览器。没有这一步，它们会继续索要 launch-token Cookie，即使 JWT 有效也在 Access 后面回 401。
+- **拒绝策略——仅 DSH 自己的面。** 只有 `/api`、`/api/remote.mux` 与 index fallback 会被 `auth.ordinary` 拒绝。不属于本插件的路由绝不在这里被拒：由它自己的 handler 裁决，所以 `ordinary=required` 不会把共装的 UI 挡在它自己的静态资源之外。没有有效 JWT 时，第三方路由的行为与安装本插件之前完全一致。
+
+豁免是纯增量的，只跳过 DSH 的 browser-session Cookie。它要求远程可信 `Host` **且** JWT 通过签名、`iss`、`aud`、过期检查；从不放宽 Host/Origin 栅栏，也从不作用于 loopback。
 
 ## 安装
 
@@ -145,7 +154,7 @@ auth:
 
 ## 普通 API 模式
 
-`auth.ordinary` 只作用于**远程非特权** API，包括 `/api/remote.mux`。Loopback 忽略它。Host/Origin 始终先执行。
+`auth.ordinary` 只作用于 DSH 自己面上的**远程非特权** API——`/api` 前缀、`/api/remote.mux` 与 index fallback。其他插件注册的路由不在其范围内，由它们自己的 handler 裁决。Loopback 忽略它。Host/Origin 始终先执行。
 
 | 模式 | 无 JWT | 有效 JWT | 无效 JWT |
 | --- | --- | --- | --- |
@@ -164,6 +173,7 @@ auth:
 | `settings/*` 返回 401 | Access header 缺失或未被转发。查反向代理是否转发 `Cf-Access-Jwt-Assertion`。loopback 仍须打开 `dsh web` 打印的 `?token=` URL。 |
 | `settings/*` 返回 403 | `iss`/`aud`/签名/过期无效、插件未配置、Host/Origin 不匹配，或 Origin 时钟偏差超过约 30 秒。 |
 | `ordinary=required` 时事件 WebSocket 失败 | `/api/remote.mux` 走普通 API 策略。缺 JWT → 401；无效 JWT → 403。 |
+| Access 后面其他插件的路由返回 401（例如 `/dsh-market/*`） | 2.1.0 已修复：Access JWT 的 Cookie 替代以前只覆盖 `/api`。升级本包即可，无需改配置。 |
 | Loopback Settings 坏了 | 卸载插件；loopback 不得要求 JWT。若仍要求，请报 bug。 |
 | JWKS / 密钥轮换失败 | Origin 必须能访问 `https://<team>/cdn-cgi/access/certs`。Cloudflare 轮换密钥后无需改配置。 |
 | 日志 | 只记录类别（`expired`、`invalid_signature`、`issuer_mismatch`、`audience_mismatch`、`missing_token`、`jwks_unavailable`、`unconfigured`）。从不记录 token。 |
@@ -176,6 +186,7 @@ auth:
 | --- | --- | --- |
 | 1.0.x | 0.1.1-rc.2（0.1.2 之前） | Live 验证（Web profile，远程 Settings / Credentials）。走 `apiProxy` + privileged pin。与 DSH 0.1.2+ 不兼容。 |
 | 2.0.x | 0.1.5-alpha.1 | 已在 Cloudflare Access 后的 Web profile 上 live 验证（远程 Settings 不需要 DSH `?token=`）。单元/集成测试。CI 不启动 DSH 进程。 |
+| 2.1.x | 0.1.5-alpha.1、0.2.0-rc.2 | `0.2.0-rc.2` 已对照安装的 DSH 包核对，并在 Access 后的 Web profile 上 live 验证（有效 JWT、伪造 JWT → 403、loopback → 401、`/api` 拒绝范围不变）；privileged 端点名已对照 `dsh-api-settings-controller`、`dsh-agent-preset-registry`、`dsh-llm` 重新核对。单元/集成测试。CI 不启动 DSH 进程。 |
 
 在本矩阵更新之前，不要默认更新的 DSH 版本可用。
 

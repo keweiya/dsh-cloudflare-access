@@ -8,7 +8,7 @@ This is a dual-face **Profile Bundle + Web Client** plugin. It does **not** repl
 
 It does not ship a login page, password store, MFA, session table, or Cloudflare API client.
 
-Plugin **`2.0.x`** targets DeepSeek Harness **`0.1.5-alpha.1`**. Plugin **`1.0.x`** is the line before DSH `0.1.2` (live-tested on `0.1.1-rc.2`). Do not assume other DSH releases work until the [compatibility matrix](#compatibility) is updated.
+Plugin **`2.1.x`** supports DeepSeek Harness **`0.1.5-alpha.1`** and **`0.2.0-rc.2`**. Plugin **`2.0.x`** is the `0.1.5-alpha.1`-only line, and **`1.0.x`** is the line before DSH `0.1.2` (live-tested on `0.1.1-rc.2`). Do not assume other DSH releases work until the [compatibility matrix](#compatibility) is updated.
 
 ## Architecture
 
@@ -44,7 +44,7 @@ export DSH_CF_ACCESS_TEAM_DOMAIN=https://example.cloudflareaccess.com
 export DSH_CF_ACCESS_AUDIENCES=your-access-application-aud
 ```
 
-5. Open the site through Access and hard-refresh once, then load Settings. A valid `Cf-Access-Jwt-Assertion` at Origin replaces DSH's launch-token cookie for remote Hosts. Loopback still needs the `?token=` URL printed by `dsh web`.
+5. Open the site through Access and hard-refresh once, then load Settings. A valid `Cf-Access-Jwt-Assertion` at Origin replaces DSH's launch-token cookie for remote Hosts — for DSH's own `/api` and for routes other plugins register. Loopback still needs the `?token=` URL printed by `dsh web`.
 
 Confirm the bundle with `dsh --profile web --dump-config`: a layer named `dsh-cloudflare-access` and a plugin row `id: cloudflare-access`.
 
@@ -64,6 +64,15 @@ Keep Origin reachable only from Cloudflare (or equivalent ingress). Installing t
 Host/Origin runs first. A valid JWT never rewrites Host to loopback. Privileged success goes to the original `/api` handler (DSH Remote). On a remote trusted host, a valid Access JWT also skips DSH's launch-token cookie. Missing or invalid JWT returns 401/403 and never enters the privileged implementation. Loopback does not read JWT and still uses the official DSH token/cookie.
 
 Forward `Host`, `Origin`, and `Cf-Access-Jwt-Assertion`. Do not strip the assertion header. Do not trust the `CF_Authorization` cookie.
+
+### Which routes the Access JWT covers
+
+`connection.requestRejection` is DSH's admission check for **every** route owner, not just `/api`: third-party plugins call it too (dshmarket ≥ 1.66.13 puts its 48 `/dsh-market/*` routes behind it). The plugin therefore splits its two jobs by route:
+
+- **Cookie substitution — all routes.** Every registered route and WebSocket upgrade receives the Access-JWT waiver, so a route that asks DSH's own gate also admits a browser Access already authenticated. Without this, those routes keep demanding the launch-token cookie and answer 401 behind Access even though the JWT is valid.
+- **Deny policy — DSH's own surfaces only.** Only `/api`, `/api/remote.mux`, and the index fallback are denied by `auth.ordinary`. A route this plugin does not own is never denied here: its own handler decides, so `ordinary=required` cannot lock a co-installed UI out of its own assets. With no valid JWT, a third-party route behaves exactly as it did before this plugin was installed.
+
+The waiver is additive and only ever skips DSH's browser-session cookie. It requires a remote trusted `Host` **and** a JWT that passed signature, `iss`, `aud`, and expiry checks; it never relaxes the Host/Origin fence, and never applies on loopback.
 
 ## Install
 
@@ -145,7 +154,7 @@ Missing `teamDomain` or `audiences`: the plugin still starts, loopback is unchan
 
 ## Ordinary API modes
 
-`auth.ordinary` applies only to **remote non-privileged** APIs, including `/api/remote.mux`. Loopback ignores it. Host/Origin always runs first.
+`auth.ordinary` applies only to **remote non-privileged** APIs on DSH's own surfaces — the `/api` prefix, `/api/remote.mux`, and the index fallback. Routes registered by other plugins are outside its scope; their own handler decides. Loopback ignores it. Host/Origin always runs first.
 
 | Mode | No JWT | Valid JWT | Invalid JWT |
 | --- | --- | --- | --- |
@@ -164,6 +173,7 @@ Privileged remote APIs always require a valid JWT, regardless of this setting.
 | 401 on `settings/*` | Access header missing or not forwarded. Inspect reverse-proxy forwarding of `Cf-Access-Jwt-Assertion`. Loopback still needs the `?token=` URL printed by `dsh web`. |
 | 403 on `settings/*` | Invalid `iss`/`aud`/signature/expiry, unconfigured plugin, Host/Origin mismatch, or Origin clock more than ~30s off. |
 | Events WebSocket fails when `ordinary=required` | `/api/remote.mux` follows the ordinary policy. Missing JWT → 401; invalid JWT → 403. |
+| 401 from another plugin's routes behind Access (for example `/dsh-market/*`) | Fixed in 2.1.0: the Access-JWT cookie substitution used to cover only `/api`. Upgrade this package; no config change is needed. |
 | Loopback Settings broken | Unload the plugin; loopback must not require JWT. File a bug if it does. |
 | JWKS / key rotation failures | Origin must reach `https://<team>/cdn-cgi/access/certs`. No config change after Cloudflare rotates keys. |
 | Logs | Categories only (`expired`, `invalid_signature`, `issuer_mismatch`, `audience_mismatch`, `missing_token`, `jwks_unavailable`, `unconfigured`). Tokens are never logged. |
@@ -176,6 +186,7 @@ This plugin does not authorize `host.pickDirectory` or `host.openPath`. Some nat
 | --- | --- | --- |
 | 1.0.x | 0.1.1-rc.2（0.1.2 之前） | Live-tested (Web profile, remote Settings / Credentials). `apiProxy` + privileged pin. Not compatible with DSH 0.1.2+. |
 | 2.0.x | 0.1.5-alpha.1 | Live-tested on a Web profile behind Cloudflare Access (remote Settings without DSH `?token=`). Unit/integration tests. CI does not start a DSH process. |
+| 2.1.x | 0.1.5-alpha.1, 0.2.0-rc.2 | `0.2.0-rc.2` measured against the installed DSH packages and live on a Web profile behind Cloudflare Access (valid JWT, forged JWT → 403, loopback → 401, `/api` deny scope unchanged); privileged endpoint names re-verified against `dsh-api-settings-controller`, `dsh-agent-preset-registry`, and `dsh-llm`. Unit/integration tests. CI does not start a DSH process. |
 
 Do not assume newer DSH releases work until this matrix is updated.
 

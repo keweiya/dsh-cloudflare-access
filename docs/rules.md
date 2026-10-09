@@ -110,7 +110,9 @@ RULE-PACKAGING-BUNDLE: `package.json` 必须声明 `dsh.bundle.patch` 指向 `co
 
 RULE-PACKAGING-CLIENT: 必须提供构建完成的 `exports["./client"]` 与 `dsh.client.platform = web`。`dsh.client.immediately` 必须为 `true`，`inject` 必须包含 `@deepseek-ai/dsh-client-connection`。安装后无需用户编译 DSH Web。
 
-RULE-PACKAGING-PEER: `peerDependencies` 只声明实际验证过的 DSH API 范围；当前对准 `0.1.5-alpha.1`，禁止提前写宽泛范围。
+RULE-PACKAGING-PEER: `peerDependencies` 只声明实际验证过的 DSH API 范围；当前声明 `^0.1.5-alpha.1 || ^0.2.0-rc.2`（两个版本都已对照官方 npm 包核对，`0.2.0-rc.2` 另在 Access 后的 Web profile 上 live 验证），禁止提前写宽泛范围。privileged 端点名必须对照安装的 DSH 包核对，不得凭记忆推断。
+
+RULE-COMPAT-ROUTE-SCOPE: 豁免标记（跳过 DSH launch-token Cookie）必须覆盖每一条注册路由与每一个 upgrade；policy 的 deny 只允许作用于 `/api` 前缀、`/api/remote.mux` 与 index fallback。不属于本插件的路由不得被本插件拒绝——它们的准入由自己的所有者裁决。
 
 RULE-PACKAGING-ARTIFACTS: Git 树与 npm tarball 必须包含 `lib/index.js`、`lib/client.js`、`README.md`、`LICENSE`。`lib/client.js` 必须是 `window.__ModuleLoader__.load` factory。`keywords` 必须包含 `dsh-plugin`。作为依赖安装时，若 `lib/` 已存在，`prepare` 不得要求本机安装 TypeScript 或 esbuild。
 

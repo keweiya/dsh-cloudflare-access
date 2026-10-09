@@ -104,6 +104,26 @@ describe('authorization policy', () => {
     expect(isPrivilegedMethod('settings.describe')).toBe(false)
   })
 
+  it('covers the privileged endpoints measured on 0.2.0-rc.2', () => {
+    // Measured against the installed 0.2.0-rc.2 packages: settings/credentials
+    // from @deepseek-ai/dsh-api-settings-controller, agentPresets from
+    // @deepseek-ai/dsh-agent-preset-registry, llm from @deepseek-ai/dsh-llm.
+    for (const method of [
+      'settings/describe',
+      'settings/update',
+      'settings/replace',
+      'settings/mutate',
+      'settings/openSettingsDocument',
+      'credentials/describe',
+      'credentials/set',
+      'credentials/unset',
+      'agentPresets/read',
+      'llm/discoverModels',
+    ]) {
+      expect(isPrivilegedMethod(method), method).toBe(true)
+    }
+  })
+
   it('skips JWT verification unless the decision can change', () => {
     expect(jwtParticipates({ method: 'llm/listProviders', ordinary: 'off', tokenPresent: true })).toBe(false)
     expect(jwtParticipates({ method: 'remote.mux', ordinary: 'optional', tokenPresent: false })).toBe(false)

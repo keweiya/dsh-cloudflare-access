@@ -36,10 +36,10 @@ PRINCIPLE-7: 插件效果必须可逆。unload 后不得留下包装、路由替
 
 ## 关键概念
 - **Privileged API**：本插件 JWT 放行的配置面 Remote，见 `docs/protocols.md`。
-- **Ordinary API**：其余 `/api` 方法以及 `/api/remote.mux`；是否要求 JWT 由 `auth.ordinary` 决定。
+- **Ordinary API**：DSH 自己面上其余 `/api` 方法以及 `/api/remote.mux`；是否要求 JWT 由 `auth.ordinary` 决定。第三方插件注册的路由不属于该模式的范围。
 - **Team Domain**：Cloudflare Access 团队域名，同时作为 JWT issuer 与 JWKS 基址。
 - **Capability enablement**：Client 允许 UI 发起 Host settings RPC；成功与否由 Server 决定。
-- **compat 适配**：针对 DSH 无公开 auth hook 的可逆包装；target 为 `0.1.5-alpha.1`。
+- **compat 适配**：针对 DSH 无公开 auth hook 的可逆包装；target 为 `0.1.5-alpha.1` 与 `0.2.0-rc.2`。
 
 ## 术语表
 - **DSH**：DeepSeek Harness。

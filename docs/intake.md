@@ -26,15 +26,16 @@ accepted
 - FACT-15: 插件 unload 必须可逆，不得留下全局 monkey patch。
 - FACT-16: 不实现 `host.pickDirectory`、`host.openPath`、用户名密码、MFA、用户数据库、RBAC、Cloudflare API、自动创建 Access Application、nginx 管理。远程页上因此出现的 native host UI 入口可以存在，对应 RPC 保持 403。
 - FACT-17: License MIT；TypeScript；ESM；GitHub 开源；npm 公共包 `dsh-cloudflare-access`（https://www.npmjs.com/package/dsh-cloudflare-access）。
-- FACT-18: DSH `0.1.5-alpha.1` 无公开 authorization hook。`connection.requestRejection` 同步，不能承载 jose JWKS。配置面走 Typert Remote。Client 通过 `connection.isLoopback` → `remote.$host.isLoopback` 决定 Settings persistence。完整调用链见 `docs/references/dsh-source-research.md`。
-- FACT-19: `settings/*` 配置面方法、`credentials/*`、`agentPresets/read|copy|deletePreset`、`llm/discoverModels` 由本插件按 privileged 要求 JWT。`agentPresets/list|select`、`llm/listProviders|listConfigurableProviders` 按 ordinary。
+- FACT-18: DSH `0.1.5-alpha.1` 与 `0.2.0-rc.2` 都没有公开 authorization hook。`connection.requestRejection` 同步，不能承载 jose JWKS。配置面走 Typert Remote。Client 通过 `connection.isLoopback` → `remote.$host.isLoopback` 决定 Settings persistence。完整调用链见 `docs/references/dsh-source-research.md`。
+- FACT-19: `settings/*` 配置面方法、`credentials/*`、`agentPresets/read`、`llm/discoverModels` 由本插件按 privileged 要求 JWT。`agentPresets/list|select`、`llm/listProviders|listConfigurableProviders` 按 ordinary。名单取两条支持线的并集：不存在的条目无害，缺失的条目在 `ordinary=off` 下是 fail open。`agentPresets/copy|deletePreset`、`settings/canOpenAgentPresetDirectory|openAgentPresetDirectory` 是 `0.1.5-alpha.1` 专有（`0.2.0-rc.2` 已无这些方法）。
 - FACT-20: `dsh.client.immediately` 必须为 `true`，且 inject `@deepseek-ai/dsh-client-connection`。否则 Web boot 在 ui-settings 把 `isLoopback=false` 快照进 memory persistence 之后才加载本模块，远程 Settings 不会调用 `settings/describe`。
-- FACT-21: 当前 target 是 DSH `0.1.5-alpha.1`。已在 Access 后的 Web profile 上 live 验证远程 Settings。CI 仍只跑本仓库单元/集成测试与 `pnpm pack:check`，不启动 DSH 进程。
+- FACT-21: 当前 target 是 DSH `0.1.5-alpha.1` 与 `0.2.0-rc.2`。已在 Access 后的 Web profile 上 live 验证远程 Settings。CI 仍只跑本仓库单元/集成测试与 `pnpm pack:check`，不启动 DSH 进程。
 - FACT-22: 生产配置应使用环境变量锁定 Team Domain / Audience。本插件不提供独立 Web Settings 表单来编辑这些信任根。
-- FACT-23: 远程 + 有效 Access JWT 代替 DSH process launch token / `dsh-auth-*` Cookie（首页、`/api`、`/api/remote.mux`）。loopback 仍要求官方 token/Cookie。反向代理必须把 `Cf-Access-Jwt-Assertion` 转到 Origin。
+- FACT-23: 远程 + 有效 Access JWT 代替 DSH process launch token / `dsh-auth-*` Cookie（首页、`/api`、`/api/remote.mux`、以及第三方插件注册的路由与 upgrade）。loopback 仍要求官方 token/Cookie。反向代理必须把 `Cf-Access-Jwt-Assertion` 转到 Origin。
+- FACT-24: `connection.requestRejection` 是宿主开放给每一个路由所有者的检查，不是 `/api` 私有物：dshmarket ≥ 1.66.13 把它的 48 条 `/dsh-market/*` exact 路由都放在这道检查后面（dsh-market#603）。因此豁免标记覆盖每一条注册路由与 upgrade，而 policy 的 deny 只作用于 `/api`、`/api/remote.mux` 与 index fallback。决策见 `docs/decisions/ADR-0006-route-coverage-for-cookie-substitution.md`。
 
 ## Assumptions
-- ASSUMPTION-1: 兼容性矩阵与 peerDependencies 只声明已对照过的 DSH `0.1.5-alpha.1`，不提前写更宽范围。
+- ASSUMPTION-1: 兼容性矩阵与 peerDependencies 只声明已对照过的 DSH `0.1.5-alpha.1` 与 `0.2.0-rc.2`，不提前写更宽范围。
 - ASSUMPTION-2: npm 包名使用未加 scope 的 `dsh-cloudflare-access`。GitHub 仓库为 `Luawig/dsh-cloudflare-access`。
 - ASSUMPTION-3: Cordis 配置面是可被后续 overlay 编辑的配置来源；环境变量覆盖该面。
 - ASSUMPTION-4: 远程 WebSocket 事件通道 `/api/remote.mux` 按普通 API 策略处理，不属于 privileged 集合。

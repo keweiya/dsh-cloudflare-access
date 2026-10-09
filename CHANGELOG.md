@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 2.1.0
+
+- Cover **every** registered route and WebSocket upgrade with the Access-JWT cookie substitution, not just `/api`. `connection.requestRejection` is DSH's admission check for every route owner, so a third-party route that asks it (dshmarket ≥ 1.66.13 puts its 48 `/dsh-market/*` routes behind it, dsh-market#603) kept demanding DSH's launch-token cookie and answered 401 behind Access even with a valid JWT.
+- Keep the deny policy on DSH's own surfaces only: the `/api` prefix, `/api/remote.mux`, and the index fallback. A route this plugin does not own is never denied by `auth.ordinary`, so `ordinary=required` cannot lock a co-installed UI out of its own assets; without a valid JWT such a route behaves exactly as it did before the plugin was installed.
+- Support DSH `0.2.0-rc.2`: peer ranges are now `^0.1.5-alpha.1 || ^0.2.0-rc.2` for `@deepseek-ai/dsh-client-connection` and `@deepseek-ai/dsh-host-webserver`, and `^4.0.2` for `@deepseek-ai/cordis` (the pinned exact versions made `dsh plugin add` reject the install on 0.2.0-rc.2).
+- Re-verify the privileged endpoint set against the installed 0.2.0-rc.2 packages and document each name's source (`dsh-api-settings-controller`, `dsh-agent-preset-registry/typert.host.js`, `dsh-llm/typert.host.js`). The set stays the union of both supported lines: an entry naming no method on the running version is inert, while a missing entry is fail-open under `ordinary=off`. `settings/canOpenAgentPresetDirectory`, `settings/openAgentPresetDirectory`, `agentPresets/copy`, and `agentPresets/deletePreset` are 0.1.5-alpha.1-only; `agentPresets/list` and `agentPresets/select` stay ordinary on purpose.
+- Add integration tests for third-party exact routes and upgrades: valid JWT marks, missing/invalid JWT does not, loopback stays on the official token/cookie, `ordinary=required` never denies a route the plugin does not own, and `/api` denial is unchanged.
+
 ## 2.0.0
 
 - Overlay Cloudflare JWT on the original `/api`, `/api/remote.mux`, and index fallback. A valid Access JWT on a remote trusted host skips DSH's launch-token cookie, including Access login callbacks with `sec-fetch-site: cross-site`. Loopback still requires the official token.

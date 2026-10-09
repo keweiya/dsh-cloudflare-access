@@ -12,15 +12,16 @@
 6. [rules.md](./rules.md) — 不可违反的规则
 7. 需要实现细节时再读 [services/](./services/) 与 [protocols.md](./protocols.md)
 
-## 已实现（v2.0.0）
+## 已实现（v2.1.0）
 
 - Origin 验证 `Cf-Access-Jwt-Assertion`，Remote JWKS，fail closed。
 - 远程 privileged 授权（Settings / Credentials / 特权 Agent Preset / `llm/discoverModels`）。
 - 普通 API `off | optional | required`。
 - Web Client capability enablement，且 `dsh.client.immediately: true`。
 - 标准 `dsh.bundle` + `dsh.client` 安装；unload 可逆。
-- 对照 DSH `0.1.5-alpha.1`：Typert Remote 路径、`/api/remote.mux`，JWT 叠在原 `/api` handler 之前。
-- 远程有效 Access JWT 代替 DSH launch-token Cookie；已在 Web profile 上 live 验证远程 Settings。
+- 对照 DSH `0.1.5-alpha.1` 与 `0.2.0-rc.2`：Typert Remote 路径、`/api/remote.mux`，JWT 叠在原 `/api` handler 之前。
+- 远程有效 Access JWT 代替 DSH launch-token Cookie，覆盖 DSH 自己的面与第三方插件注册的路由 / upgrade；已在 Web profile 上 live 验证远程 Settings 与市场路由。
+- policy 的 deny 只作用于 DSH 自己的面（`/api`、`/api/remote.mux`、index fallback），第三方路由的准入由它们自己的所有者裁决。
 
 ## 尚未交付
 

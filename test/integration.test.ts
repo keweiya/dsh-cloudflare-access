@@ -698,6 +698,249 @@ describe('Access JWT substitutes for the DSH launch-token cookie', () => {
   })
 })
 
+describe('third-party routes reuse the Access JWT cookie substitution', () => {
+  const config = {
+    teamDomain: 'https://example.cloudflareaccess.com',
+    audiences: ['aud'],
+    ordinary: 'off' as const,
+    envLocked: { teamDomain: false, audiences: false, ordinary: false },
+  }
+
+  function createConnection() {
+    return {
+      requestRejection(_req: IncomingMessage): 401 | 403 | undefined {
+        return 401
+      },
+      authorizeIndex(_req: IncomingMessage, res: ServerResponse): boolean {
+        res.writeHead(401)
+        res.end('dsh web authentication required')
+        return false
+      },
+    }
+  }
+
+  /**
+   * Mount the plugin over a fake host, then register a dshmarket-shaped exact
+   * route whose handler asks the host gate itself — exactly what dshmarket's
+   * `refuseUnadmitted` does since 1.66.13 (dsh-market#603).
+   */
+  function mount(input: {
+    ordinary?: 'off' | 'optional' | 'required'
+    verify?: () => Promise<JwtVerification>
+  } = {}) {
+    const webServer = createFakeWebServer()
+    const disposers: Array<() => void> = []
+    const connection = createConnection()
+    installServerCompat({
+      webServer,
+      logger: { info() {}, warn() {} },
+      effect: collectEffects(disposers),
+      get() { return undefined },
+      inject(_deps, callback) {
+        callback({ connection })
+      },
+    }, {
+      config: { ...config, ordinary: input.ordinary ?? 'off' },
+      verifier: {
+        async verify() {
+          return input.verify === undefined
+            ? { outcome: 'valid', reason: null, audienceMatched: 'aud' }
+            : await input.verify()
+        },
+      },
+      getTrustedHosts: () => ['dsh.example.com'],
+    })
+    webServer.register({
+      kind: 'exact',
+      path: '/dsh-market/status',
+      handler: async (req, res) => {
+        const rejection = connection.requestRejection(req)
+        if (rejection !== undefined) {
+          res.writeHead(rejection)
+          res.end('blocked')
+          return
+        }
+        res.writeHead(200)
+        res.end('market')
+      },
+    })
+    const route = webServer.routes.get('exact:/dsh-market/status')
+    if (route === undefined) throw new Error('route missing')
+    return { route, webServer, disposers, connection }
+  }
+
+  it('skips the launch-token cookie on a third-party exact route after a valid JWT', async () => {
+    const { route, disposers } = mount()
+    const result = await invoke(route.handler, {
+      url: '/dsh-market/status',
+      headers: {
+        host: 'dsh.example.com',
+        origin: 'https://dsh.example.com',
+        'cf-access-jwt-assertion': 'valid',
+      },
+    })
+    expect(result.status).toBe(200)
+    expect(result.body).toBe('market')
+    for (const dispose of disposers) dispose()
+  })
+
+  it('keeps the launch-token cookie requirement without a JWT', async () => {
+    const { route, disposers } = mount()
+    const result = await invoke(route.handler, {
+      url: '/dsh-market/status',
+      headers: { host: 'dsh.example.com', origin: 'https://dsh.example.com' },
+    })
+    expect(result.status).toBe(401)
+    expect(result.body).toBe('blocked')
+    for (const dispose of disposers) dispose()
+  })
+
+  it('keeps the launch-token cookie requirement when the JWT is invalid', async () => {
+    const { route, disposers } = mount({
+      verify: async () => ({ outcome: 'invalid', reason: 'expired', audienceMatched: null }),
+    })
+    const result = await invoke(route.handler, {
+      url: '/dsh-market/status',
+      headers: {
+        host: 'dsh.example.com',
+        origin: 'https://dsh.example.com',
+        'cf-access-jwt-assertion': 'expired',
+      },
+    })
+    expect(result.status).toBe(401)
+    expect(result.body).toBe('blocked')
+    for (const dispose of disposers) dispose()
+  })
+
+  it('keeps loopback third-party routes on the official token/cookie', async () => {
+    const { route, disposers } = mount()
+    const result = await invoke(route.handler, {
+      url: '/dsh-market/status',
+      headers: { host: '127.0.0.1:3080', 'cf-access-jwt-assertion': 'valid' },
+    })
+    expect(result.status).toBe(401)
+    expect(result.body).toBe('blocked')
+    for (const dispose of disposers) dispose()
+  })
+
+  it('never applies the ordinary deny policy to a route the plugin does not own', async () => {
+    // ordinary=required still denies DSH's own /api and index fallback, but a
+    // third-party route must not be denied here: that would lock a co-installed
+    // UI (assets, health checks, webhooks) out of its own surface.
+    const webServer = createFakeWebServer()
+    const disposers: Array<() => void> = []
+    installServerCompat({
+      webServer,
+      logger: { info() {}, warn() {} },
+      effect: collectEffects(disposers),
+      get() { return undefined },
+    }, {
+      config: { ...config, ordinary: 'required' },
+      verifier: {
+        async verify() {
+          return { outcome: 'missing', reason: 'missing_token', audienceMatched: null }
+        },
+      },
+      getTrustedHosts: () => ['dsh.example.com'],
+    })
+    webServer.register({
+      kind: 'exact',
+      path: '/dsh-market/plugin/client.js',
+      handler: async (_req, res) => {
+        res.writeHead(200)
+        res.end('asset')
+      },
+    })
+    const route = webServer.routes.get('exact:/dsh-market/plugin/client.js')
+    if (route === undefined) throw new Error('route missing')
+    const result = await invoke(route.handler, {
+      url: '/dsh-market/plugin/client.js',
+      headers: { host: 'dsh.example.com', origin: 'https://dsh.example.com' },
+    })
+    expect(result.status).toBe(200)
+    expect(result.body).toBe('asset')
+    for (const dispose of disposers) dispose()
+  })
+
+  it("still denies DSH's own ordinary /api under ordinary=required", async () => {
+    const webServer = createFakeWebServer()
+    const disposers: Array<() => void> = []
+    installServerCompat({
+      webServer,
+      logger: { info() {}, warn() {} },
+      effect: collectEffects(disposers),
+      get() { return undefined },
+    }, {
+      config: { ...config, ordinary: 'required' },
+      verifier: {
+        async verify() {
+          return { outcome: 'missing', reason: 'missing_token', audienceMatched: null }
+        },
+      },
+      getTrustedHosts: () => ['dsh.example.com'],
+    })
+    let inner = 0
+    webServer.register({
+      kind: 'prefix',
+      path: '/api',
+      handler: async (_req, res) => {
+        inner += 1
+        res.writeHead(200)
+        res.end('inner')
+      },
+    })
+    const route = webServer.routes.get('prefix:/api')
+    if (route === undefined) throw new Error('route missing')
+    const result = await invoke(route.handler, {
+      url: '/api/llm/listProviders',
+      headers: { host: 'dsh.example.com', origin: 'https://dsh.example.com' },
+    })
+    expect(result.status).toBe(401)
+    expect(inner).toBe(0)
+    for (const dispose of disposers) dispose()
+  })
+
+  it('marks a third-party websocket upgrade after a valid JWT', async () => {
+    const webServer = createFakeWebServer()
+    const disposers: Array<() => void> = []
+    const connection = createConnection()
+    installServerCompat({
+      webServer,
+      logger: { info() {}, warn() {} },
+      effect: collectEffects(disposers),
+      get() { return undefined },
+      inject(_deps, callback) {
+        callback({ connection })
+      },
+    }, {
+      config,
+      verifier: {
+        async verify() {
+          return { outcome: 'valid', reason: null, audienceMatched: 'aud' }
+        },
+      },
+      getTrustedHosts: () => ['dsh.example.com'],
+    })
+    const seen: Array<401 | 403 | undefined> = []
+    webServer.registerUpgrade({
+      path: '/dsh-market/events',
+      handler: async (req) => { seen.push(connection.requestRejection(req)) },
+    })
+    const route = webServer.upgrades.get('/dsh-market/events')
+    if (route === undefined) throw new Error('upgrade missing')
+    await invokeUpgrade(route.handler, {
+      url: '/dsh-market/events',
+      headers: {
+        host: 'dsh.example.com',
+        origin: 'https://dsh.example.com',
+        'cf-access-jwt-assertion': 'valid',
+      },
+    })
+    expect(seen).toEqual([undefined])
+    for (const dispose of disposers) dispose()
+  })
+})
+
 async function invoke(
   handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>,
   input: { url: string, headers: Record<string, string> },
